@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
   Select,
@@ -21,8 +23,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BarChart3,
   CheckCircle2,
+  Crown,
   DollarSign,
+  Key,
+  Loader2,
   Lock,
+  LogOut,
   Package,
   ShoppingBag,
   Star,
@@ -34,6 +40,7 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Order } from "../backend.d";
+import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useGetAllOrders,
   useGetStats,
@@ -72,6 +79,17 @@ const premiumCosts = [
   { component: "Colored section tabs + ribbon", cost: 15 },
   { component: "Premium eco box", cost: 35 },
   { component: "Shipping", cost: 60 },
+];
+
+const eliteCosts = [
+  { component: "Full color printing 120 pages", cost: 160 },
+  { component: "Gold custom cover", cost: 60 },
+  { component: "Perfect binding", cost: 30 },
+  { component: "Foil sticker pack (8 + foil)", cost: 35 },
+  { component: "Gold foil ribbon + dividers", cost: 25 },
+  { component: "Thick eco mailer box", cost: 50 },
+  { component: "Custom personalisation (name/exam)", cost: 20 },
+  { component: "Shipping", cost: 70 },
 ];
 
 const ninetyDayPlan = [
@@ -188,6 +206,29 @@ const competitors = [
   },
 ];
 
+function EditionBadge({ edition }: { edition: string }) {
+  if (edition.includes("Elite")) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-sans-display bg-amber-50 text-amber-700 border-amber-300">
+        <Crown className="w-3 h-3" />
+        Elite
+      </span>
+    );
+  }
+  if (edition.includes("Premium")) {
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full border font-sans-display bg-coral/10 text-coral border-coral/30">
+        Premium
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs px-2 py-0.5 rounded-full border font-sans-display bg-muted text-muted-foreground border-border">
+      Base
+    </span>
+  );
+}
+
 function OrderRow({
   order,
   index,
@@ -211,11 +252,7 @@ function OrderRow({
       </TableCell>
       <TableCell className="text-sm font-body">{order.phone}</TableCell>
       <TableCell>
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full border font-sans-display ${order.edition.includes("Premium") ? "bg-coral/10 text-coral border-coral/30" : "bg-muted text-muted-foreground border-border"}`}
-        >
-          {order.edition.includes("Premium") ? "Premium" : "Base"}
-        </span>
+        <EditionBadge edition={order.edition} />
       </TableCell>
       <TableCell className="font-sans-display font-bold text-foreground">
         ₹{order.pricePaid.toString()}
@@ -261,6 +298,11 @@ export default function AdminPage() {
   const { data: stats, isLoading: isLoadingStats } = useGetStats();
   const { data: orders, isLoading: isLoadingOrders } = useGetAllOrders();
   const { mutate: updateStatus } = useUpdateOrderStatus();
+  const { login, clear, isLoggingIn, identity, isInitializing } =
+    useInternetIdentity();
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [adminToken, setAdminToken] = useState("");
+  const [isClaimingAdmin, setIsClaimingAdmin] = useState(false);
 
   const handleStatusUpdate = (orderId: string, newStatus: string) => {
     updateStatus(
@@ -272,7 +314,29 @@ export default function AdminPage() {
     );
   };
 
-  if (isCheckingAdmin) {
+  const handleLogin = () => {
+    setLoggingIn(true);
+    login();
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem("caffeineAdminToken");
+    clear();
+    toast.success("Logged out successfully");
+  };
+
+  const handleClaimAdmin = () => {
+    if (!adminToken.trim()) {
+      toast.error("Please enter your admin token");
+      return;
+    }
+    setIsClaimingAdmin(true);
+    sessionStorage.setItem("caffeineAdminToken", adminToken.trim());
+    // Reload so useActor picks up the token from sessionStorage
+    window.location.reload();
+  };
+
+  if (isCheckingAdmin || isInitializing) {
     return (
       <div className="min-h-[calc(100vh-56px)] bg-background flex items-center justify-center">
         <div className="text-center space-y-4" data-ocid="admin.loading_state">
@@ -284,23 +348,165 @@ export default function AdminPage() {
   }
 
   if (!isAdmin) {
+    const isLoggedIn = !!identity && !identity.getPrincipal().isAnonymous();
     return (
       <div
         className="min-h-[calc(100vh-56px)] bg-background flex items-center justify-center px-4"
         data-ocid="admin.error_state"
       >
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 bg-destructive/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
-            <Lock className="w-8 h-8 text-destructive" />
+        <motion.div
+          className="text-center max-w-md w-full"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          {/* Glass card */}
+          <div
+            className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              boxShadow:
+                "0 25px 50px -12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",
+            }}
+          >
+            {/* Hero gradient background */}
+            <div className="absolute inset-0 -z-10 hero-gradient" />
+            <div
+              className="absolute inset-0 -z-10 opacity-60"
+              style={{
+                background:
+                  "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
+              }}
+            />
+
+            <div className="relative p-10">
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6"
+                style={{
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <Lock className="w-10 h-10 text-white" />
+              </div>
+
+              <h1 className="font-display text-3xl font-bold text-white mb-3">
+                Admin Access
+              </h1>
+
+              {isLoggedIn ? (
+                <>
+                  <p className="text-white/70 font-body text-sm mb-5">
+                    You're logged in. Enter your admin token to claim dashboard
+                    access.
+                  </p>
+
+                  {/* Principal display */}
+                  <div
+                    className="px-4 py-3 rounded-xl text-xs font-body font-mono text-white/60 break-all mb-5 text-left"
+                    style={{
+                      background: "rgba(255,255,255,0.1)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    <span className="text-white/40 text-[10px] uppercase tracking-wider block mb-1">
+                      Your Principal
+                    </span>
+                    {identity.getPrincipal().toString()}
+                  </div>
+
+                  {/* Token input */}
+                  <div className="space-y-3 mb-4">
+                    <div className="relative">
+                      <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
+                      <Input
+                        type="password"
+                        value={adminToken}
+                        onChange={(e) => setAdminToken(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleClaimAdmin();
+                        }}
+                        placeholder="Enter admin token..."
+                        className="pl-10 bg-white/10 border-white/25 text-white placeholder:text-white/35 focus-visible:ring-white/30 focus-visible:border-white/50"
+                        data-ocid="admin.token_input"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleClaimAdmin}
+                      disabled={isClaimingAdmin || !adminToken.trim()}
+                      className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
+                      style={{
+                        background: isClaimingAdmin
+                          ? "rgba(255,255,255,0.15)"
+                          : "oklch(0.78 0.12 72)",
+                        color: "oklch(0.19 0.035 155)",
+                        border: "none",
+                      }}
+                      data-ocid="admin.claim_admin_button"
+                    >
+                      {isClaimingAdmin ? (
+                        <>
+                          <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                          Claiming access…
+                        </>
+                      ) : (
+                        <>
+                          <Key className="w-4 h-4 mr-2" />
+                          Claim Admin Access
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="text-white/40 text-xs font-body hover:text-white/70 transition-colors underline underline-offset-2"
+                    data-ocid="admin.logout_button"
+                  >
+                    Log out
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-white/70 font-body text-sm mb-8">
+                    Login with Internet Identity to access the admin dashboard.
+                    Only authorised accounts can manage orders.
+                  </p>
+                  <Button
+                    onClick={handleLogin}
+                    disabled={isLoggingIn || loggingIn}
+                    className="w-full font-sans-display font-bold py-3 text-base rounded-xl text-forest"
+                    style={{
+                      background: "oklch(0.78 0.12 72)",
+                      border: "none",
+                    }}
+                    data-ocid="admin.login_button"
+                  >
+                    {isLoggingIn || loggingIn ? (
+                      <>
+                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        Connecting…
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4 mr-2" />
+                        Login with Internet Identity
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-white/40 text-xs font-body mt-4">
+                    Secure login via ICP Internet Identity. Only you will have
+                    access.
+                  </p>
+                </>
+              )}
+            </div>
           </div>
-          <h1 className="font-display text-2xl font-bold text-foreground mb-3">
-            Access Denied
-          </h1>
-          <p className="text-muted-foreground font-body">
-            You don't have admin access. Please log in with an admin account to
-            view the dashboard.
-          </p>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -311,22 +517,35 @@ export default function AdminPage() {
   const earlyBirdUsed = stats ? Number(stats.earlyBirdUsed) : 0;
   const baseOrders = stats ? Number(stats.baseOrders) : 0;
   const premiumOrders = stats ? Number(stats.premiumOrders) : 0;
+  const eliteOrders = stats ? Number(stats.eliteOrders) : 0;
   const breakEvenProgress = Math.min((totalOrders / 33) * 100, 100);
 
   return (
     <div className="min-h-[calc(100vh-56px)] bg-background py-8 px-4">
       <div className="max-w-7xl mx-auto">
         <motion.div
-          className="mb-8"
+          className="mb-8 flex items-start justify-between"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="font-display text-3xl font-bold text-foreground mb-1">
-            Admin Dashboard
-          </h1>
-          <p className="text-muted-foreground font-body">
-            Business overview for Exam Success Kit
-          </p>
+          <div>
+            <h1 className="font-display text-3xl font-bold text-foreground mb-1">
+              Admin Dashboard
+            </h1>
+            <p className="text-muted-foreground font-body">
+              Business overview for Exam Success Kit
+            </p>
+          </div>
+          <Button
+            onClick={handleLogout}
+            variant="outline"
+            size="sm"
+            className="font-sans-display text-sm border-border hover:bg-muted"
+            data-ocid="admin.logout_button"
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1.5" />
+            Logout
+          </Button>
         </motion.div>
 
         {/* Stats Cards */}
@@ -359,7 +578,8 @@ export default function AdminPage() {
                     {totalOrders}
                   </div>
                   <div className="text-xs text-muted-foreground font-body mt-1">
-                    Base: {baseOrders} · Premium: {premiumOrders}
+                    Base: {baseOrders} · Premium: {premiumOrders} · Elite:{" "}
+                    {eliteOrders}
                   </div>
                 </CardContent>
               </Card>
@@ -462,6 +682,15 @@ export default function AdminPage() {
             </span>
             <span className="font-sans-display font-bold text-coral">
               {premiumOrders} sold
+            </span>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+            <Crown className="w-4 h-4 text-amber-600" />
+            <span className="text-sm font-sans-display text-amber-700">
+              Elite Edition:
+            </span>
+            <span className="font-sans-display font-bold text-amber-800">
+              {eliteOrders} sold
             </span>
           </div>
           <div className="bg-gold/20 border border-gold/40 rounded-xl px-4 py-2.5 flex items-center gap-2">
@@ -572,42 +801,42 @@ export default function AdminPage() {
               <TabsTrigger
                 value="cost"
                 className="text-xs rounded-lg"
-                data-ocid="admin.toolkit.tab"
+                data-ocid="admin.toolkit_cost.tab"
               >
                 Cost Structure
               </TabsTrigger>
               <TabsTrigger
                 value="plan"
                 className="text-xs rounded-lg"
-                data-ocid="admin.toolkit.tab"
+                data-ocid="admin.toolkit_plan.tab"
               >
                 90-Day Plan
               </TabsTrigger>
               <TabsTrigger
                 value="scale"
                 className="text-xs rounded-lg"
-                data-ocid="admin.toolkit.tab"
+                data-ocid="admin.toolkit_scale.tab"
               >
                 Scaling Roadmap
               </TabsTrigger>
               <TabsTrigger
                 value="content"
                 className="text-xs rounded-lg"
-                data-ocid="admin.toolkit.tab"
+                data-ocid="admin.toolkit_content.tab"
               >
                 Content Calendar
               </TabsTrigger>
               <TabsTrigger
                 value="market"
                 className="text-xs rounded-lg"
-                data-ocid="admin.toolkit.tab"
+                data-ocid="admin.toolkit_market.tab"
               >
                 Market Research
               </TabsTrigger>
               <TabsTrigger
                 value="ambassador"
                 className="text-xs rounded-lg"
-                data-ocid="admin.toolkit.tab"
+                data-ocid="admin.toolkit_ambassador.tab"
               >
                 Ambassador Program
               </TabsTrigger>
@@ -615,12 +844,12 @@ export default function AdminPage() {
 
             {/* Cost Structure */}
             <TabsContent value="cost">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Base */}
                 <div className="bg-card border border-border rounded-2xl overflow-hidden">
                   <div className="bg-kraft/30 px-5 py-4 border-b border-border">
                     <h3 className="font-sans-display font-bold text-foreground">
-                      Base Eco Edition — ₹499
+                      Base Eco — ₹499
                     </h3>
                   </div>
                   <Table>
@@ -677,7 +906,7 @@ export default function AdminPage() {
                 <div className="bg-card border border-coral/30 rounded-2xl overflow-hidden">
                   <div className="bg-coral/10 px-5 py-4 border-b border-coral/20">
                     <h3 className="font-sans-display font-bold text-foreground">
-                      Premium Color Edition — ₹599
+                      Premium Color — ₹599
                     </h3>
                   </div>
                   <Table>
@@ -724,6 +953,64 @@ export default function AdminPage() {
                         </TableCell>
                         <TableCell className="font-sans-display font-bold text-forest text-right">
                           ₹{599 - premiumCosts.reduce((s, r) => s + r.cost, 0)}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Elite */}
+                <div className="bg-card border border-amber-300/60 rounded-2xl overflow-hidden">
+                  <div className="bg-amber-50 px-5 py-4 border-b border-amber-200/60 flex items-center gap-2">
+                    <Crown className="w-4 h-4 text-amber-600" />
+                    <h3 className="font-sans-display font-bold text-foreground">
+                      Elite Custom — ₹799
+                    </h3>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="font-sans-display text-xs">
+                          Component
+                        </TableHead>
+                        <TableHead className="font-sans-display text-xs text-right">
+                          Cost (₹)
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {eliteCosts.map((row) => (
+                        <TableRow key={row.component}>
+                          <TableCell className="text-sm font-body">
+                            {row.component}
+                          </TableCell>
+                          <TableCell className="text-sm font-sans-display text-right">
+                            ₹{row.cost}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="bg-muted/50 font-bold">
+                        <TableCell className="font-sans-display font-bold text-foreground">
+                          Total Cost
+                        </TableCell>
+                        <TableCell className="font-sans-display font-bold text-foreground text-right">
+                          ₹{eliteCosts.reduce((s, r) => s + r.cost, 0)}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-sans-display text-muted-foreground">
+                          Selling Price
+                        </TableCell>
+                        <TableCell className="font-sans-display text-right text-muted-foreground">
+                          ₹799
+                        </TableCell>
+                      </TableRow>
+                      <TableRow className="bg-forest/5">
+                        <TableCell className="font-sans-display font-bold text-forest">
+                          Profit Per Unit
+                        </TableCell>
+                        <TableCell className="font-sans-display font-bold text-forest text-right">
+                          ₹{799 - eliteCosts.reduce((s, r) => s + r.cost, 0)}
                         </TableCell>
                       </TableRow>
                     </TableBody>

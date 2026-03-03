@@ -13,6 +13,9 @@ export function usePlaceOrder() {
       pincode,
       paymentMethod,
       edition,
+      customName = "",
+      examType = "",
+      bonusPages = "",
     }: {
       customerName: string;
       phone: string;
@@ -20,6 +23,9 @@ export function usePlaceOrder() {
       pincode: string;
       paymentMethod: string;
       edition: string;
+      customName?: string;
+      examType?: string;
+      bonusPages?: string;
     }) => {
       if (!actor) throw new Error("Actor not initialized");
       return actor.placeOrder(
@@ -29,6 +35,9 @@ export function usePlaceOrder() {
         pincode,
         paymentMethod,
         edition,
+        customName,
+        examType,
+        bonusPages,
       );
     },
     onSuccess: () => {
@@ -44,7 +53,11 @@ export function useGetOrdersByPhone(phone: string) {
     queryKey: ["orders", "phone", phone],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getOrdersByPhone(phone);
+      try {
+        return await actor.getOrdersByPhone(phone);
+      } catch {
+        return [];
+      }
     },
     enabled: !!actor && !isFetching && phone.length >= 10,
   });

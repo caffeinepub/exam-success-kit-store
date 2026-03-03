@@ -10,11 +10,11 @@ type Page = "home" | "track" | "admin";
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("home");
   const [orderModalOpen, setOrderModalOpen] = useState(false);
-  const [defaultEdition, setDefaultEdition] = useState<"base" | "premium">(
-    "base",
-  );
+  const [defaultEdition, setDefaultEdition] = useState<
+    "base" | "premium" | "elite"
+  >("base");
 
-  const openOrderModal = (edition: "base" | "premium" = "base") => {
+  const openOrderModal = (edition: "base" | "premium" | "elite" = "base") => {
     setDefaultEdition(edition);
     setOrderModalOpen(true);
   };
@@ -22,7 +22,16 @@ export default function App() {
   return (
     <>
       <Toaster position="top-center" richColors />
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-forest/95 backdrop-blur-sm border-b border-white/10">
+      <nav
+        className="fixed top-0 left-0 right-0 z-50 border-b border-white/10"
+        style={{
+          background: "oklch(0.19 0.035 155 / 0.88)",
+          backdropFilter: "blur(20px) saturate(1.5)",
+          WebkitBackdropFilter: "blur(20px) saturate(1.5)",
+          boxShadow:
+            "0 1px 0 rgba(255,255,255,0.08), 0 4px 16px rgba(0,0,0,0.15)",
+        }}
+      >
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
             type="button"

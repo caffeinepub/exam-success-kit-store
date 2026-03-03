@@ -19,18 +19,23 @@ export interface Order {
   'isEarlyBird' : boolean,
   'address' : string,
   'timestamp' : bigint,
+  'customName' : string,
   'phone' : string,
   'pricePaid' : bigint,
   'pincode' : string,
+  'examType' : string,
+  'bonusPages' : string,
 }
 export interface Stats {
   'totalOrders' : bigint,
   'baseOrders' : bigint,
+  'eliteOrders' : bigint,
   'premiumOrders' : bigint,
   'totalProfit' : bigint,
   'totalRevenue' : bigint,
   'earlyBirdUsed' : bigint,
 }
+export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
@@ -38,14 +43,17 @@ export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'getAllOrders' : ActorMethod<[], Array<Order>>,
+  'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getOrdersByPhone' : ActorMethod<[string], Array<Order>>,
   'getStats' : ActorMethod<[], Stats>,
+  'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'placeOrder' : ActorMethod<
-    [string, string, string, string, string, string],
+    [string, string, string, string, string, string, string, string, string],
     string
   >,
+  'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'updateOrderStatus' : ActorMethod<[string, string], boolean>,
 }
 export declare const idlService: IDL.ServiceClass;
