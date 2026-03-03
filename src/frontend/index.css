@@ -23,6 +23,15 @@
 }
 
 @layer base {
+  /* ── Hide all scrollbars globally (keep scroll functionality) ── */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
   :root {
     --radius: 0.75rem;
 
@@ -178,5 +187,71 @@
   .section-divider {
     height: 2px;
     background: linear-gradient(90deg, transparent, oklch(var(--gold)), transparent);
+  }
+
+  /* ── Liquid Glass System ── */
+
+  /* Base glass — for dark hero backgrounds */
+  .glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px) saturate(1.6);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  /* Frosted glass for light/cream backgrounds */
+  .glass-light {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(24px) saturate(1.8);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    border: 1px solid rgba(255, 255, 255, 0.88);
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.07),
+      0 1px 4px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  }
+
+  /* Dark glass for navbar/hero */
+  .glass-dark {
+    background: oklch(0.19 0.035 155 / 0.86);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  /* Hover glow for glass cards */
+  .glass-hover {
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .glass-hover:hover {
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.1),
+      0 2px 8px rgba(0, 0, 0, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.98);
+    border-color: rgba(255, 255, 255, 0.98);
+  }
+
+  /* Utility: thin scrollbar visible on hover for explicit scroll containers */
+  .glass-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.15) transparent;
+  }
+  .glass-scroll::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+  }
+  .glass-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .glass-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.15);
+    border-radius: 2px;
   }
 }

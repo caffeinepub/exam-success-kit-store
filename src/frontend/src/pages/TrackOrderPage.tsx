@@ -39,7 +39,7 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.08 }}
-      className="bg-card border border-border rounded-2xl p-5 hover:border-forest/40 transition-colors"
+      className="glass-light glass-hover rounded-2xl p-5"
       data-ocid={`track.order_item.${index + 1}`}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
@@ -137,7 +137,13 @@ export default function TrackOrderPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="w-14 h-14 bg-forest/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <div
+            className="w-14 h-14 glass rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{
+              background: "oklch(0.34 0.095 155 / 0.12)",
+              border: "1px solid oklch(0.34 0.095 155 / 0.2)",
+            }}
+          >
             <Package className="w-7 h-7 text-forest" />
           </div>
           <h1 className="font-display text-3xl sm:text-4xl font-bold text-foreground mb-3">
@@ -150,7 +156,7 @@ export default function TrackOrderPage() {
 
         <motion.form
           onSubmit={handleSearch}
-          className="flex gap-3 mb-8"
+          className="glass-light rounded-2xl p-4 flex gap-3 mb-8"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -189,7 +195,7 @@ export default function TrackOrderPage() {
           <div data-ocid="track.order_list">
             {!orders || orders.length === 0 ? (
               <motion.div
-                className="text-center py-16 bg-muted/40 rounded-2xl border border-border"
+                className="text-center py-16 glass-light rounded-2xl"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 data-ocid="track.empty_state"

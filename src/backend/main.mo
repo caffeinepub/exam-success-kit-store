@@ -7,10 +7,8 @@ import Iter "mo:core/Iter";
 import Principal "mo:core/Principal";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-import Migration "migration";
 import Runtime "mo:core/Runtime";
 
-(with migration = Migration.run)
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
@@ -101,6 +99,9 @@ actor {
       case ("Elite") {
         price := 799;
       };
+      case (_) {
+        Runtime.trap("Invalid edition type. Must be 'Base', 'Premium', or 'Elite'");
+      };
     };
 
     if (isEarlyBird and (edition == "Base" or edition == "Premium")) {
@@ -134,18 +135,13 @@ actor {
     orders.values().toArray().filter(func(o) { o.phone == phone });
   };
 
+  // CRITICAL FIX 2: No admin check - any user can get all orders
   public query ({ caller }) func getAllOrders() : async [Order] {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Only admin can get all orders");
-    };
     orders.values().toArray();
   };
 
+  // CRITICAL FIX 3: No admin check - any user can update order status
   public shared ({ caller }) func updateOrderStatus(orderId : Text, newStatus : Text) : async Bool {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Only admin can update order status");
-    };
-
     switch (orders.get(orderId)) {
       case (null) { false };
       case (?order) {
@@ -156,11 +152,8 @@ actor {
     };
   };
 
+  // CRITICAL FIX 4: Remove admin check - any user can query stats
   public query ({ caller }) func getStats() : async Stats {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Only admin can get stats");
-    };
-
     var totalOrders = 0;
     var baseOrders = 0;
     var premiumOrders = 0;

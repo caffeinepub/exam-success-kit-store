@@ -92,14 +92,8 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
     e.preventDefault();
     if (!validate()) return;
 
-    let editionString: string;
-    if (edition === "base") {
-      editionString = "Base Eco Edition";
-    } else if (edition === "premium") {
-      editionString = "Premium Color Edition";
-    } else {
-      editionString = `Elite Custom Book | Cover: ${coverName.trim()} | Exam: ${examType} | Bonus: ${bonusPages}`;
-    }
+    const editionString =
+      edition === "base" ? "Base" : edition === "premium" ? "Premium" : "Elite";
 
     placeOrder(
       {

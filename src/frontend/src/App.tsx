@@ -1,23 +1,57 @@
 import { Toaster } from "@/components/ui/sonner";
+import { LogOut, User } from "lucide-react";
 import { useState } from "react";
 import OrderModal from "./components/OrderModal";
+import SignInModal from "./components/SignInModal";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import AdminPage from "./pages/AdminPage";
 import LandingPage from "./pages/LandingPage";
 import TrackOrderPage from "./pages/TrackOrderPage";
 
 type Page = "home" | "track" | "admin";
 
-export default function App() {
+function AppShell() {
+  const { isLoggedIn, isAdmin, userEmail, userPhone, signOut } = useAuth();
   const [currentPage, setCurrentPage] = useState<Page>("home");
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [defaultEdition, setDefaultEdition] = useState<
     "base" | "premium" | "elite"
   >("base");
+  const [signInOpen, setSignInOpen] = useState(false);
+  // Pending order edition to open after sign-in
+  const [pendingEdition, setPendingEdition] = useState<
+    "base" | "premium" | "elite" | null
+  >(null);
 
   const openOrderModal = (edition: "base" | "premium" | "elite" = "base") => {
+    if (!isLoggedIn) {
+      setPendingEdition(edition);
+      setSignInOpen(true);
+      return;
+    }
     setDefaultEdition(edition);
     setOrderModalOpen(true);
   };
+
+  const handleSignInSuccess = () => {
+    if (pendingEdition !== null) {
+      setDefaultEdition(pendingEdition);
+      setOrderModalOpen(true);
+      setPendingEdition(null);
+    }
+  };
+
+  const displayName = userEmail
+    ? userEmail.split("@")[0]
+    : userPhone
+      ? userPhone.slice(-4)
+      : null;
+
+  const avatarLetter = userEmail
+    ? userEmail[0].toUpperCase()
+    : userPhone
+      ? userPhone[0]
+      : "?";
 
   return (
     <>
@@ -41,7 +75,7 @@ export default function App() {
           >
             Exam<span className="text-gold">Kit</span>
           </button>
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => setCurrentPage("track")}
@@ -50,14 +84,17 @@ export default function App() {
             >
               Track Order
             </button>
-            <button
-              type="button"
-              onClick={() => setCurrentPage("admin")}
-              className="text-white/70 hover:text-white text-sm font-body transition-colors px-2 py-1"
-              data-ocid="nav.admin_link"
-            >
-              Admin
-            </button>
+            {/* Admin link — only visible when logged in as admin */}
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setCurrentPage("admin")}
+                className="text-white/70 hover:text-white text-sm font-body transition-colors px-2 py-1"
+                data-ocid="nav.admin_link"
+              >
+                Admin
+              </button>
+            )}
             <button
               type="button"
               onClick={() => openOrderModal("base")}
@@ -66,6 +103,46 @@ export default function App() {
             >
               Order Now
             </button>
+            {/* Auth area */}
+            {isLoggedIn ? (
+              <div className="flex items-center gap-2 ml-1">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold font-sans-display text-white flex-shrink-0"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, oklch(0.34 0.095 155), oklch(0.42 0.1 155))",
+                    border: "2px solid rgba(255,255,255,0.25)",
+                  }}
+                  title={displayName ?? ""}
+                  data-ocid="nav.user_avatar"
+                >
+                  {avatarLetter}
+                </div>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="text-white/60 hover:text-white text-xs font-body transition-colors flex items-center gap-1"
+                  data-ocid="nav.signout_button"
+                  title="Sign out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingEdition(null);
+                  setSignInOpen(true);
+                }}
+                className="text-white/70 hover:text-white text-sm font-body transition-colors px-2 py-1 flex items-center gap-1.5"
+                data-ocid="nav.signin_button"
+              >
+                <User className="w-4 h-4" />
+                <span className="hidden sm:inline">Sign In</span>
+              </button>
+            )}
           </div>
         </div>
       </nav>
@@ -75,7 +152,9 @@ export default function App() {
           <LandingPage onOpenOrderModal={openOrderModal} />
         )}
         {currentPage === "track" && <TrackOrderPage />}
-        {currentPage === "admin" && <AdminPage />}
+        {currentPage === "admin" && (
+          <AdminPage onOpenSignIn={() => setSignInOpen(true)} />
+        )}
       </main>
 
       <OrderModal
@@ -83,6 +162,23 @@ export default function App() {
         onClose={() => setOrderModalOpen(false)}
         defaultEdition={defaultEdition}
       />
+
+      <SignInModal
+        open={signInOpen}
+        onClose={() => {
+          setSignInOpen(false);
+          setPendingEdition(null);
+        }}
+        onSuccess={handleSignInSuccess}
+      />
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   );
 }

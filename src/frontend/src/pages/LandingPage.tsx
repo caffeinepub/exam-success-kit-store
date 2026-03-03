@@ -391,8 +391,17 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
           >
             {/* Base Card */}
             <motion.div variants={itemVariants} className="relative">
-              <div className="bg-kraft/30 border-2 border-kraft rounded-3xl overflow-hidden h-full flex flex-col">
-                <div className="bg-kraft/50 px-6 py-5 flex items-center justify-between">
+              <div
+                className="glass-light glass-hover rounded-3xl overflow-hidden h-full flex flex-col"
+                style={{ border: "1.5px solid rgba(180,155,100,0.35)" }}
+              >
+                <div
+                  className="px-6 py-5 flex items-center justify-between"
+                  style={{
+                    background: "oklch(0.82 0.07 60 / 0.18)",
+                    borderBottom: "1px solid rgba(180,155,100,0.2)",
+                  }}
+                >
                   <div>
                     <h3 className="font-sans-display font-bold text-xl text-foreground">
                       Base Eco
@@ -450,8 +459,21 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                   Most Popular ✦
                 </span>
               </div>
-              <div className="bg-primary/5 border-2 border-coral rounded-3xl overflow-hidden ring-2 ring-coral/20 h-full flex flex-col">
-                <div className="bg-coral/15 px-6 py-5 flex items-center justify-between">
+              <div
+                className="glass-light glass-hover rounded-3xl overflow-hidden h-full flex flex-col"
+                style={{
+                  border: "1.5px solid oklch(0.62 0.18 30 / 0.45)",
+                  boxShadow:
+                    "0 4px 24px oklch(0.62 0.18 30 / 0.08), inset 0 1px 0 rgba(255,255,255,0.95)",
+                }}
+              >
+                <div
+                  className="px-6 py-5 flex items-center justify-between"
+                  style={{
+                    background: "oklch(0.62 0.18 30 / 0.08)",
+                    borderBottom: "1px solid oklch(0.62 0.18 30 / 0.18)",
+                  }}
+                >
                   <div>
                     <h3 className="font-sans-display font-bold text-xl text-foreground">
                       Premium Color
@@ -519,20 +541,19 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                 </span>
               </div>
               <div
-                className="rounded-3xl overflow-hidden h-full flex flex-col"
+                className="glass-light glass-hover rounded-3xl overflow-hidden h-full flex flex-col"
                 style={{
-                  background:
-                    "linear-gradient(160deg, oklch(0.98 0.02 80) 0%, oklch(0.96 0.04 75) 100%)",
-                  border: "2px solid oklch(0.75 0.1 72)",
-                  boxShadow: "0 0 0 4px oklch(0.85 0.08 72 / 0.25)",
+                  border: "1.5px solid oklch(0.75 0.1 72 / 0.6)",
+                  boxShadow:
+                    "0 4px 24px oklch(0.75 0.1 72 / 0.12), 0 0 0 3px oklch(0.85 0.08 72 / 0.18), inset 0 1px 0 rgba(255,255,255,0.95)",
                 }}
               >
                 {/* Header */}
                 <div
                   className="px-6 py-5 flex items-center justify-between"
                   style={{
-                    background:
-                      "linear-gradient(135deg, oklch(0.82 0.1 75 / 0.4) 0%, oklch(0.78 0.12 72 / 0.3) 100%)",
+                    background: "oklch(0.78 0.12 72 / 0.1)",
+                    borderBottom: "1px solid oklch(0.75 0.1 72 / 0.25)",
                   }}
                 >
                   <div>
@@ -652,7 +673,12 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
 
           {/* Upgrade nudge */}
           <motion.div
-            className="mt-10 text-center p-5 bg-gold/20 border border-gold/40 rounded-2xl"
+            className="mt-10 text-center p-5 glass-light rounded-2xl"
+            style={{
+              border: "1px solid oklch(0.78 0.12 72 / 0.4)",
+              boxShadow:
+                "0 4px 16px oklch(0.78 0.12 72 / 0.1), inset 0 1px 0 rgba(255,255,255,0.95)",
+            }}
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
@@ -681,7 +707,10 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
             <h2 className="font-display text-2xl sm:text-3xl font-bold text-foreground mb-8 text-center">
               Full Feature Comparison
             </h2>
-            <div className="rounded-2xl overflow-hidden border border-border bg-card shadow-xs">
+            <div
+              className="glass-light rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(255,255,255,0.75)" }}
+            >
               {/* Header row */}
               <div className="grid grid-cols-4 bg-forest/5 border-b border-border">
                 <div className="px-4 py-3 text-sm font-sans-display font-semibold text-muted-foreground">
@@ -757,7 +786,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                 <motion.div
                   key={item.section}
                   variants={itemVariants}
-                  className="flex items-center gap-4 bg-card border border-border rounded-2xl p-4 hover:border-forest/50 transition-colors group"
+                  className="flex items-center gap-4 glass-light glass-hover rounded-2xl p-4 group"
                 >
                   <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-forest/10 flex items-center justify-center group-hover:bg-forest/20 transition-colors">
                     <Icon className="w-5 h-5 text-forest" />
@@ -786,7 +815,12 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
       <section className="py-20 px-4 bg-background">
         <div className="max-w-4xl mx-auto">
           <motion.div
-            className="relative bg-forest/5 border-2 border-forest/20 rounded-3xl p-8 sm:p-12 overflow-hidden"
+            className="relative glass-light rounded-3xl p-8 sm:p-12 overflow-hidden"
+            style={{
+              border: "1.5px solid oklch(0.34 0.095 155 / 0.25)",
+              boxShadow:
+                "0 4px 24px oklch(0.34 0.095 155 / 0.06), inset 0 1px 0 rgba(255,255,255,0.95)",
+            }}
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -805,7 +839,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                 {ecoFeatures.map((f) => (
                   <div
                     key={f.label}
-                    className="flex flex-col items-center gap-2 p-4 bg-forest/10 rounded-2xl"
+                    className="flex flex-col items-center gap-2 p-4 glass rounded-2xl"
                   >
                     <Leaf className="w-6 h-6 text-forest" />
                     <span className="text-sm font-sans-display font-semibold text-foreground text-center">

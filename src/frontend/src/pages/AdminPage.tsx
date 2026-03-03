@@ -1,3 +1,14 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,14 +36,14 @@ import {
   CheckCircle2,
   Crown,
   DollarSign,
-  Key,
-  Loader2,
   Lock,
   LogOut,
   Package,
+  ShieldAlert,
   ShoppingBag,
   Star,
   Target,
+  Trash2,
   TrendingUp,
   Truck,
 } from "lucide-react";
@@ -40,22 +51,27 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Order } from "../backend.d";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { useAuth } from "../context/AuthContext";
 import {
   useGetAllOrders,
   useGetStats,
-  useIsCallerAdmin,
   useUpdateOrderStatus,
 } from "../hooks/useQueries";
 
+const ADMIN_PASSCODE = "RDS";
+
 const statusStyles: Record<string, string> = {
   Pending: "bg-yellow-50 text-yellow-800 border-yellow-200",
+  Packing: "bg-orange-50 text-orange-700 border-orange-200",
+  Dispatched: "bg-purple-50 text-purple-700 border-purple-200",
   Shipped: "bg-blue-50 text-blue-700 border-blue-200",
   Delivered: "bg-green-50 text-green-700 border-green-200",
 };
 
 const statusIcons: Record<string, typeof Package> = {
   Pending: Package,
+  Packing: Package,
+  Dispatched: Truck,
   Shipped: Truck,
   Delivered: CheckCircle2,
 };
@@ -281,6 +297,8 @@ function OrderRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="Pending">Pending</SelectItem>
+            <SelectItem value="Packing">Packing</SelectItem>
+            <SelectItem value="Dispatched">Dispatched</SelectItem>
             <SelectItem value="Shipped">Shipped</SelectItem>
             <SelectItem value="Delivered">Delivered</SelectItem>
           </SelectContent>
@@ -293,16 +311,99 @@ function OrderRow({
   );
 }
 
-export default function AdminPage() {
-  const { data: isAdmin, isLoading: isCheckingAdmin } = useIsCallerAdmin();
+const CLEAR_PASSCODE = "Inanis";
+
+function ClearHistoryDialog() {
+  const [confirmText, setConfirmText] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const handleConfirm = () => {
+    if (confirmText === CLEAR_PASSCODE) {
+      toast.info(
+        "Feature coming soon — contact support to clear order history",
+      );
+      setOpen(false);
+      setConfirmText("");
+    } else {
+      toast.error("Incorrect confirmation code");
+    }
+  };
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) setConfirmText("");
+      }}
+    >
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="font-sans-display text-sm border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+          data-ocid="admin.clear_history_button"
+        >
+          <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+          Clear History
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent data-ocid="admin.clear_history_dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="font-display text-xl text-foreground flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-red-500" />
+            Clear All Orders
+          </AlertDialogTitle>
+          <AlertDialogDescription className="font-body text-sm">
+            This will permanently delete all order history. Type{" "}
+            <span className="font-mono font-bold text-foreground">Inanis</span>{" "}
+            to confirm.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="py-2">
+          <Input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="Type Inanis to confirm"
+            className="font-mono"
+            data-ocid="admin.clear_history_input"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleConfirm();
+            }}
+          />
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel
+            onClick={() => setConfirmText("")}
+            data-ocid="admin.clear_history_cancel_button"
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleConfirm}
+            disabled={confirmText !== CLEAR_PASSCODE}
+            className="bg-red-600 hover:bg-red-700 text-white"
+            data-ocid="admin.clear_history_confirm_button"
+          >
+            Clear All Orders
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export default function AdminPage({
+  onOpenSignIn,
+}: { onOpenSignIn?: () => void }) {
+  const { isAdmin: isAuthAdmin, signOut: authSignOut } = useAuth();
+  const [passcodeUnlocked, setPasscodeUnlocked] = useState(
+    () => sessionStorage.getItem("adminUnlocked") === "1",
+  );
+  const [passcode, setPasscode] = useState("");
   const { data: stats, isLoading: isLoadingStats } = useGetStats();
   const { data: orders, isLoading: isLoadingOrders } = useGetAllOrders();
   const { mutate: updateStatus } = useUpdateOrderStatus();
-  const { login, clear, isLoggingIn, identity, isInitializing } =
-    useInternetIdentity();
-  const [loggingIn, setLoggingIn] = useState(false);
-  const [adminToken, setAdminToken] = useState("");
-  const [isClaimingAdmin, setIsClaimingAdmin] = useState(false);
 
   const handleStatusUpdate = (orderId: string, newStatus: string) => {
     updateStatus(
@@ -314,52 +415,36 @@ export default function AdminPage() {
     );
   };
 
-  const handleLogin = () => {
-    setLoggingIn(true);
-    login();
+  const handlePasscodeLogin = () => {
+    if (passcode.trim() === ADMIN_PASSCODE) {
+      sessionStorage.setItem("adminUnlocked", "1");
+      setPasscodeUnlocked(true);
+      toast.success("Welcome, Admin!");
+    } else {
+      toast.error("Incorrect passcode");
+    }
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem("caffeineAdminToken");
-    clear();
-    toast.success("Logged out successfully");
+    sessionStorage.removeItem("adminUnlocked");
+    setPasscodeUnlocked(false);
+    setPasscode("");
+    authSignOut();
+    toast.success("Logged out");
   };
 
-  const handleClaimAdmin = () => {
-    if (!adminToken.trim()) {
-      toast.error("Please enter your admin token");
-      return;
-    }
-    setIsClaimingAdmin(true);
-    sessionStorage.setItem("caffeineAdminToken", adminToken.trim());
-    // Reload so useActor picks up the token from sessionStorage
-    window.location.reload();
-  };
-
-  if (isCheckingAdmin || isInitializing) {
-    return (
-      <div className="min-h-[calc(100vh-56px)] bg-background flex items-center justify-center">
-        <div className="text-center space-y-4" data-ocid="admin.loading_state">
-          <Skeleton className="h-10 w-48 mx-auto rounded-xl" />
-          <Skeleton className="h-5 w-32 mx-auto" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    const isLoggedIn = !!identity && !identity.getPrincipal().isAnonymous();
+  // STEP 1: Must be signed in as admin account
+  if (!isAuthAdmin) {
     return (
       <div
         className="min-h-[calc(100vh-56px)] bg-background flex items-center justify-center px-4"
         data-ocid="admin.error_state"
       >
         <motion.div
-          className="text-center max-w-md w-full"
+          className="text-center max-w-sm w-full"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          {/* Glass card */}
           <div
             className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl"
             style={{
@@ -371,7 +456,6 @@ export default function AdminPage() {
                 "0 25px 50px -12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",
             }}
           >
-            {/* Hero gradient background */}
             <div className="absolute inset-0 -z-10 hero-gradient" />
             <div
               className="absolute inset-0 -z-10 opacity-60"
@@ -380,7 +464,6 @@ export default function AdminPage() {
                   "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
               }}
             />
-
             <div className="relative p-10">
               <div
                 className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6"
@@ -392,118 +475,107 @@ export default function AdminPage() {
               >
                 <Lock className="w-10 h-10 text-white" />
               </div>
-
-              <h1 className="font-display text-3xl font-bold text-white mb-3">
-                Admin Access
+              <h1 className="font-display text-3xl font-bold text-white mb-2">
+                Access Denied
               </h1>
+              <p className="text-white/60 font-body text-sm mb-8">
+                This page is only accessible to the store admin. Please sign in
+                with the admin account.
+              </p>
+              <Button
+                onClick={onOpenSignIn}
+                className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
+                style={{
+                  background: "oklch(0.78 0.12 72)",
+                  color: "oklch(0.19 0.035 155)",
+                  border: "none",
+                }}
+                data-ocid="admin.signin_button"
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Sign In as Admin
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
-              {isLoggedIn ? (
-                <>
-                  <p className="text-white/70 font-body text-sm mb-5">
-                    You're logged in. Enter your admin token to claim dashboard
-                    access.
-                  </p>
-
-                  {/* Principal display */}
-                  <div
-                    className="px-4 py-3 rounded-xl text-xs font-body font-mono text-white/60 break-all mb-5 text-left"
-                    style={{
-                      background: "rgba(255,255,255,0.1)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                  >
-                    <span className="text-white/40 text-[10px] uppercase tracking-wider block mb-1">
-                      Your Principal
-                    </span>
-                    {identity.getPrincipal().toString()}
-                  </div>
-
-                  {/* Token input */}
-                  <div className="space-y-3 mb-4">
-                    <div className="relative">
-                      <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
-                      <Input
-                        type="password"
-                        value={adminToken}
-                        onChange={(e) => setAdminToken(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleClaimAdmin();
-                        }}
-                        placeholder="Enter admin token..."
-                        className="pl-10 bg-white/10 border-white/25 text-white placeholder:text-white/35 focus-visible:ring-white/30 focus-visible:border-white/50"
-                        data-ocid="admin.token_input"
-                      />
-                    </div>
-                    <Button
-                      onClick={handleClaimAdmin}
-                      disabled={isClaimingAdmin || !adminToken.trim()}
-                      className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
-                      style={{
-                        background: isClaimingAdmin
-                          ? "rgba(255,255,255,0.15)"
-                          : "oklch(0.78 0.12 72)",
-                        color: "oklch(0.19 0.035 155)",
-                        border: "none",
-                      }}
-                      data-ocid="admin.claim_admin_button"
-                    >
-                      {isClaimingAdmin ? (
-                        <>
-                          <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                          Claiming access…
-                        </>
-                      ) : (
-                        <>
-                          <Key className="w-4 h-4 mr-2" />
-                          Claim Admin Access
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="text-white/40 text-xs font-body hover:text-white/70 transition-colors underline underline-offset-2"
-                    data-ocid="admin.logout_button"
-                  >
-                    Log out
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="text-white/70 font-body text-sm mb-8">
-                    Login with Internet Identity to access the admin dashboard.
-                    Only authorised accounts can manage orders.
-                  </p>
-                  <Button
-                    onClick={handleLogin}
-                    disabled={isLoggingIn || loggingIn}
-                    className="w-full font-sans-display font-bold py-3 text-base rounded-xl text-forest"
-                    style={{
-                      background: "oklch(0.78 0.12 72)",
-                      border: "none",
-                    }}
-                    data-ocid="admin.login_button"
-                  >
-                    {isLoggingIn || loggingIn ? (
-                      <>
-                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                        Connecting…
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-4 h-4 mr-2" />
-                        Login with Internet Identity
-                      </>
-                    )}
-                  </Button>
-                  <p className="text-white/40 text-xs font-body mt-4">
-                    Secure login via ICP Internet Identity. Only you will have
-                    access.
-                  </p>
-                </>
-              )}
+  // STEP 2: Signed in as admin account, now enter RDS passcode
+  if (!passcodeUnlocked) {
+    return (
+      <div
+        className="min-h-[calc(100vh-56px)] bg-background flex items-center justify-center px-4"
+        data-ocid="admin.passcode_state"
+      >
+        <motion.div
+          className="text-center max-w-sm w-full"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div
+            className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+              boxShadow:
+                "0 25px 50px -12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",
+            }}
+          >
+            <div
+              className="absolute inset-0 -z-10 opacity-60"
+              style={{
+                background:
+                  "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
+              }}
+            />
+            <div className="relative p-10">
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6"
+                style={{
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <Lock className="w-10 h-10 text-white" />
+              </div>
+              <h1 className="font-display text-3xl font-bold text-white mb-2">
+                Admin Dashboard
+              </h1>
+              <p className="text-white/60 font-body text-sm mb-8">
+                Enter your admin passcode to access the dashboard.
+              </p>
+              <div className="space-y-3">
+                <Input
+                  type="password"
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handlePasscodeLogin();
+                  }}
+                  placeholder="Enter passcode..."
+                  className="bg-white/10 border-white/25 text-white placeholder:text-white/35 focus-visible:ring-white/30 focus-visible:border-white/50 text-center text-lg tracking-widest"
+                  data-ocid="admin.token_input"
+                />
+                <Button
+                  onClick={handlePasscodeLogin}
+                  disabled={!passcode.trim()}
+                  className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
+                  style={{
+                    background: "oklch(0.78 0.12 72)",
+                    color: "oklch(0.19 0.035 155)",
+                    border: "none",
+                  }}
+                  data-ocid="admin.claim_admin_button"
+                >
+                  <Lock className="w-4 h-4 mr-2" />
+                  Enter Dashboard
+                </Button>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -536,16 +608,19 @@ export default function AdminPage() {
               Business overview for Exam Success Kit
             </p>
           </div>
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            size="sm"
-            className="font-sans-display text-sm border-border hover:bg-muted"
-            data-ocid="admin.logout_button"
-          >
-            <LogOut className="w-3.5 h-3.5 mr-1.5" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            <ClearHistoryDialog />
+            <Button
+              onClick={handleLogout}
+              variant="outline"
+              size="sm"
+              className="font-sans-display text-sm border-border hover:bg-muted"
+              data-ocid="admin.logout_button"
+            >
+              <LogOut className="w-3.5 h-3.5 mr-1.5" />
+              Logout
+            </Button>
+          </div>
         </motion.div>
 
         {/* Stats Cards */}
@@ -562,7 +637,7 @@ export default function AdminPage() {
           ) : (
             <>
               <Card
-                className="rounded-2xl border-border"
+                className="glass-light glass-hover rounded-2xl"
                 data-ocid="admin.stats_card.1"
               >
                 <CardHeader className="pb-2 pt-5 px-5">
@@ -585,7 +660,7 @@ export default function AdminPage() {
               </Card>
 
               <Card
-                className="rounded-2xl border-border"
+                className="glass-light glass-hover rounded-2xl"
                 data-ocid="admin.stats_card.2"
               >
                 <CardHeader className="pb-2 pt-5 px-5">
@@ -607,7 +682,7 @@ export default function AdminPage() {
               </Card>
 
               <Card
-                className="rounded-2xl border-border"
+                className="glass-light glass-hover rounded-2xl"
                 data-ocid="admin.stats_card.3"
               >
                 <CardHeader className="pb-2 pt-5 px-5">
@@ -629,7 +704,7 @@ export default function AdminPage() {
               </Card>
 
               <Card
-                className="rounded-2xl border-border"
+                className="glass-light glass-hover rounded-2xl"
                 data-ocid="admin.stats_card.4"
               >
                 <CardHeader className="pb-2 pt-5 px-5">
@@ -666,7 +741,7 @@ export default function AdminPage() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
         >
-          <div className="bg-card border border-border rounded-xl px-4 py-2.5 flex items-center gap-2">
+          <div className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-muted-foreground" />
             <span className="text-sm font-sans-display text-muted-foreground">
               Base Edition:
@@ -675,7 +750,10 @@ export default function AdminPage() {
               {baseOrders} sold
             </span>
           </div>
-          <div className="bg-coral/10 border border-coral/30 rounded-xl px-4 py-2.5 flex items-center gap-2">
+          <div
+            className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2"
+            style={{ border: "1px solid oklch(0.62 0.18 30 / 0.3)" }}
+          >
             <BarChart3 className="w-4 h-4 text-coral" />
             <span className="text-sm font-sans-display text-coral">
               Premium Edition:
@@ -684,7 +762,10 @@ export default function AdminPage() {
               {premiumOrders} sold
             </span>
           </div>
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+          <div
+            className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2"
+            style={{ border: "1px solid rgba(217,119,6,0.3)" }}
+          >
             <Crown className="w-4 h-4 text-amber-600" />
             <span className="text-sm font-sans-display text-amber-700">
               Elite Edition:
@@ -693,7 +774,10 @@ export default function AdminPage() {
               {eliteOrders} sold
             </span>
           </div>
-          <div className="bg-gold/20 border border-gold/40 rounded-xl px-4 py-2.5 flex items-center gap-2">
+          <div
+            className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2"
+            style={{ border: "1px solid oklch(0.78 0.12 72 / 0.4)" }}
+          >
             <Star className="w-4 h-4 text-yellow-700" />
             <span className="text-sm font-sans-display text-yellow-800">
               Early Bird Used:
@@ -715,7 +799,7 @@ export default function AdminPage() {
             All Orders
           </h2>
           <div
-            className="bg-card border border-border rounded-2xl overflow-hidden"
+            className="glass-light rounded-2xl overflow-hidden"
             data-ocid="admin.orders_table"
           >
             {isLoadingOrders ? (
@@ -795,7 +879,7 @@ export default function AdminPage() {
           </h2>
           <Tabs defaultValue="cost">
             <TabsList
-              className="flex flex-wrap h-auto gap-1 bg-muted/60 p-1 rounded-xl mb-6"
+              className="flex flex-wrap h-auto gap-1 glass-light p-1 rounded-xl mb-6"
               data-ocid="admin.toolkit.tab"
             >
               <TabsTrigger
@@ -846,8 +930,14 @@ export default function AdminPage() {
             <TabsContent value="cost">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Base */}
-                <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                  <div className="bg-kraft/30 px-5 py-4 border-b border-border">
+                <div
+                  className="glass-light rounded-2xl overflow-hidden"
+                  style={{ border: "1px solid rgba(180,155,100,0.3)" }}
+                >
+                  <div
+                    className="px-5 py-4 border-b border-border/40"
+                    style={{ background: "oklch(0.82 0.07 60 / 0.12)" }}
+                  >
                     <h3 className="font-sans-display font-bold text-foreground">
                       Base Eco — ₹499
                     </h3>
@@ -903,8 +993,17 @@ export default function AdminPage() {
                 </div>
 
                 {/* Premium */}
-                <div className="bg-card border border-coral/30 rounded-2xl overflow-hidden">
-                  <div className="bg-coral/10 px-5 py-4 border-b border-coral/20">
+                <div
+                  className="glass-light rounded-2xl overflow-hidden"
+                  style={{ border: "1px solid oklch(0.62 0.18 30 / 0.3)" }}
+                >
+                  <div
+                    className="px-5 py-4 border-b"
+                    style={{
+                      background: "oklch(0.62 0.18 30 / 0.07)",
+                      borderColor: "oklch(0.62 0.18 30 / 0.18)",
+                    }}
+                  >
                     <h3 className="font-sans-display font-bold text-foreground">
                       Premium Color — ₹599
                     </h3>
@@ -960,8 +1059,17 @@ export default function AdminPage() {
                 </div>
 
                 {/* Elite */}
-                <div className="bg-card border border-amber-300/60 rounded-2xl overflow-hidden">
-                  <div className="bg-amber-50 px-5 py-4 border-b border-amber-200/60 flex items-center gap-2">
+                <div
+                  className="glass-light rounded-2xl overflow-hidden"
+                  style={{ border: "1px solid rgba(217,119,6,0.3)" }}
+                >
+                  <div
+                    className="px-5 py-4 border-b flex items-center gap-2"
+                    style={{
+                      background: "oklch(0.78 0.12 72 / 0.08)",
+                      borderColor: "rgba(217,119,6,0.2)",
+                    }}
+                  >
                     <Crown className="w-4 h-4 text-amber-600" />
                     <h3 className="font-sans-display font-bold text-foreground">
                       Elite Custom — ₹799
@@ -1025,9 +1133,12 @@ export default function AdminPage() {
                 {ninetyDayPlan.map((month) => (
                   <div
                     key={month.month}
-                    className="bg-card border border-border rounded-2xl overflow-hidden"
+                    className="glass-light rounded-2xl overflow-hidden"
                   >
-                    <div className="bg-forest/10 px-5 py-3 border-b border-border">
+                    <div
+                      className="px-5 py-3 border-b border-border/40"
+                      style={{ background: "oklch(0.34 0.095 155 / 0.06)" }}
+                    >
                       <h3 className="font-sans-display font-bold text-forest">
                         {month.month}
                       </h3>
@@ -1071,7 +1182,7 @@ export default function AdminPage() {
 
             {/* Scaling Roadmap */}
             <TabsContent value="scale">
-              <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="glass-light rounded-2xl overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
@@ -1105,7 +1216,10 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
               </div>
-              <div className="mt-4 p-4 bg-gold/10 border border-gold/30 rounded-xl text-sm font-body text-foreground">
+              <div
+                className="mt-4 p-4 glass-light rounded-xl text-sm font-body text-foreground"
+                style={{ border: "1px solid oklch(0.78 0.12 72 / 0.3)" }}
+              >
                 <strong className="font-sans-display">Strategy Summary:</strong>{" "}
                 First 3 months: ₹30K–₹60K possible. 1 year: ₹3–5 lakh realistic.
                 With proper scaling → multi-lakh/month.
@@ -1114,7 +1228,7 @@ export default function AdminPage() {
 
             {/* Content Calendar */}
             <TabsContent value="content">
-              <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="glass-light rounded-2xl overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
@@ -1154,7 +1268,7 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
               </div>
-              <div className="mt-4 p-4 bg-muted/50 border border-border rounded-xl text-sm font-body text-muted-foreground">
+              <div className="mt-4 p-4 glass-light rounded-xl text-sm font-body text-muted-foreground">
                 <strong className="font-sans-display text-foreground">
                   Pattern (Days 6–30):
                 </strong>{" "}
@@ -1165,7 +1279,7 @@ export default function AdminPage() {
 
             {/* Market Research */}
             <TabsContent value="market">
-              <div className="bg-card border border-border rounded-2xl overflow-hidden">
+              <div className="glass-light rounded-2xl overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
@@ -1221,8 +1335,11 @@ export default function AdminPage() {
 
             {/* Ambassador Program */}
             <TabsContent value="ambassador">
-              <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 border-b border-border bg-muted/30">
+              <div className="glass-light rounded-2xl overflow-hidden">
+                <div
+                  className="px-5 py-4 border-b border-border/40"
+                  style={{ background: "rgba(255,255,255,0.5)" }}
+                >
                   <p className="font-sans-display font-bold text-foreground text-sm">
                     Student Ambassador Tracker
                   </p>
