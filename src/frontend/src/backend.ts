@@ -95,8 +95,19 @@ export interface Stats {
     eliteOrders: bigint;
     premiumOrders: bigint;
     totalProfit: bigint;
+    pendingCancelRequests: bigint;
     totalRevenue: bigint;
     earlyBirdUsed: bigint;
+}
+export interface CancelRequest {
+    id: string;
+    status: string;
+    customerPhone: string;
+    orderId: string;
+    timestamp: bigint;
+    customerEmail: string;
+    requestType: string;
+    reason: string;
 }
 export interface Order {
     id: string;
@@ -105,6 +116,7 @@ export interface Order {
     paymentMethod: string;
     edition: string;
     isEarlyBird: boolean;
+    email: string;
     address: string;
     timestamp: bigint;
     customName: string;
@@ -116,6 +128,8 @@ export interface Order {
 }
 export interface UserProfile {
     name: string;
+    email: string;
+    phone: string;
 }
 export enum UserRole {
     admin = "admin",
@@ -125,18 +139,25 @@ export enum UserRole {
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    clearOrders(clearAll: boolean): Promise<bigint>;
+    getAllCancelRequests(): Promise<Array<CancelRequest>>;
     getAllOrders(): Promise<Array<Order>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    getEarlyBirdCount(): Promise<bigint>;
+    getOrderById(orderId: string): Promise<Order | null>;
+    getOrdersByEmail(email: string): Promise<Array<Order>>;
     getOrdersByPhone(phone: string): Promise<Array<Order>>;
     getStats(): Promise<Stats>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
-    placeOrder(customerName: string, phone: string, address: string, pincode: string, paymentMethod: string, edition: string, customName: string, examType: string, bonusPages: string): Promise<string>;
+    placeOrder(customerName: string, phone: string, email: string, address: string, pincode: string, paymentMethod: string, edition: string, customName: string, examType: string, bonusPages: string): Promise<string>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    submitCancelRequest(orderId: string, customerEmail: string, customerPhone: string, reason: string, requestType: string): Promise<string>;
+    updateCancelRequest(requestId: string, newStatus: string): Promise<boolean>;
     updateOrderStatus(orderId: string, newStatus: string): Promise<boolean>;
 }
-import type { UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
+import type { Order as _Order, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
@@ -164,6 +185,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async clearOrders(arg0: boolean): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.clearOrders(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.clearOrders(arg0);
+            return result;
+        }
+    }
+    async getAllCancelRequests(): Promise<Array<CancelRequest>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllCancelRequests();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllCancelRequests();
             return result;
         }
     }
@@ -207,6 +256,48 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getCallerUserRole();
             return from_candid_UserRole_n4(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getEarlyBirdCount(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getEarlyBirdCount();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getEarlyBirdCount();
+            return result;
+        }
+    }
+    async getOrderById(arg0: string): Promise<Order | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getOrderById(arg0);
+                return from_candid_opt_n6(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getOrderById(arg0);
+            return from_candid_opt_n6(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getOrdersByEmail(arg0: string): Promise<Array<Order>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getOrdersByEmail(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getOrdersByEmail(arg0);
+            return result;
         }
     }
     async getOrdersByPhone(arg0: string): Promise<Array<Order>> {
@@ -265,17 +356,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async placeOrder(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: string, arg6: string, arg7: string, arg8: string): Promise<string> {
+    async placeOrder(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: string, arg6: string, arg7: string, arg8: string, arg9: string): Promise<string> {
         if (this.processError) {
             try {
-                const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+                const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+            const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
             return result;
         }
     }
@@ -290,6 +381,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.saveCallerUserProfile(arg0);
+            return result;
+        }
+    }
+    async submitCancelRequest(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.submitCancelRequest(arg0, arg1, arg2, arg3, arg4);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.submitCancelRequest(arg0, arg1, arg2, arg3, arg4);
+            return result;
+        }
+    }
+    async updateCancelRequest(arg0: string, arg1: string): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateCancelRequest(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateCancelRequest(arg0, arg1);
             return result;
         }
     }
@@ -312,6 +431,9 @@ function from_candid_UserRole_n4(_uploadFile: (file: ExternalBlob) => Promise<Ui
     return from_candid_variant_n5(_uploadFile, _downloadFile, value);
 }
 function from_candid_opt_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
+    return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Order]): Order | null {
     return value.length === 0 ? null : value[0];
 }
 function from_candid_variant_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {

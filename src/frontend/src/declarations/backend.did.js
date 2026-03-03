@@ -13,6 +13,16 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const CancelRequest = IDL.Record({
+  'id' : IDL.Text,
+  'status' : IDL.Text,
+  'customerPhone' : IDL.Text,
+  'orderId' : IDL.Text,
+  'timestamp' : IDL.Int,
+  'customerEmail' : IDL.Text,
+  'requestType' : IDL.Text,
+  'reason' : IDL.Text,
+});
 export const Order = IDL.Record({
   'id' : IDL.Text,
   'customerName' : IDL.Text,
@@ -20,6 +30,7 @@ export const Order = IDL.Record({
   'paymentMethod' : IDL.Text,
   'edition' : IDL.Text,
   'isEarlyBird' : IDL.Bool,
+  'email' : IDL.Text,
   'address' : IDL.Text,
   'timestamp' : IDL.Int,
   'customName' : IDL.Text,
@@ -29,13 +40,18 @@ export const Order = IDL.Record({
   'examType' : IDL.Text,
   'bonusPages' : IDL.Text,
 });
-export const UserProfile = IDL.Record({ 'name' : IDL.Text });
+export const UserProfile = IDL.Record({
+  'name' : IDL.Text,
+  'email' : IDL.Text,
+  'phone' : IDL.Text,
+});
 export const Stats = IDL.Record({
   'totalOrders' : IDL.Nat,
   'baseOrders' : IDL.Nat,
   'eliteOrders' : IDL.Nat,
   'premiumOrders' : IDL.Nat,
   'totalProfit' : IDL.Nat,
+  'pendingCancelRequests' : IDL.Nat,
   'totalRevenue' : IDL.Nat,
   'earlyBirdUsed' : IDL.Nat,
 });
@@ -43,9 +59,14 @@ export const Stats = IDL.Record({
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'clearOrders' : IDL.Func([IDL.Bool], [IDL.Nat], []),
+  'getAllCancelRequests' : IDL.Func([], [IDL.Vec(CancelRequest)], ['query']),
   'getAllOrders' : IDL.Func([], [IDL.Vec(Order)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getEarlyBirdCount' : IDL.Func([], [IDL.Nat], ['query']),
+  'getOrderById' : IDL.Func([IDL.Text], [IDL.Opt(Order)], ['query']),
+  'getOrdersByEmail' : IDL.Func([IDL.Text], [IDL.Vec(Order)], ['query']),
   'getOrdersByPhone' : IDL.Func([IDL.Text], [IDL.Vec(Order)], ['query']),
   'getStats' : IDL.Func([], [Stats], ['query']),
   'getUserProfile' : IDL.Func(
@@ -65,11 +86,18 @@ export const idlService = IDL.Service({
         IDL.Text,
         IDL.Text,
         IDL.Text,
+        IDL.Text,
       ],
       [IDL.Text],
       [],
     ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'submitCancelRequest' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [IDL.Text],
+      [],
+    ),
+  'updateCancelRequest' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], []),
   'updateOrderStatus' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], []),
 });
 
@@ -81,6 +109,16 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const CancelRequest = IDL.Record({
+    'id' : IDL.Text,
+    'status' : IDL.Text,
+    'customerPhone' : IDL.Text,
+    'orderId' : IDL.Text,
+    'timestamp' : IDL.Int,
+    'customerEmail' : IDL.Text,
+    'requestType' : IDL.Text,
+    'reason' : IDL.Text,
+  });
   const Order = IDL.Record({
     'id' : IDL.Text,
     'customerName' : IDL.Text,
@@ -88,6 +126,7 @@ export const idlFactory = ({ IDL }) => {
     'paymentMethod' : IDL.Text,
     'edition' : IDL.Text,
     'isEarlyBird' : IDL.Bool,
+    'email' : IDL.Text,
     'address' : IDL.Text,
     'timestamp' : IDL.Int,
     'customName' : IDL.Text,
@@ -97,13 +136,18 @@ export const idlFactory = ({ IDL }) => {
     'examType' : IDL.Text,
     'bonusPages' : IDL.Text,
   });
-  const UserProfile = IDL.Record({ 'name' : IDL.Text });
+  const UserProfile = IDL.Record({
+    'name' : IDL.Text,
+    'email' : IDL.Text,
+    'phone' : IDL.Text,
+  });
   const Stats = IDL.Record({
     'totalOrders' : IDL.Nat,
     'baseOrders' : IDL.Nat,
     'eliteOrders' : IDL.Nat,
     'premiumOrders' : IDL.Nat,
     'totalProfit' : IDL.Nat,
+    'pendingCancelRequests' : IDL.Nat,
     'totalRevenue' : IDL.Nat,
     'earlyBirdUsed' : IDL.Nat,
   });
@@ -111,9 +155,14 @@ export const idlFactory = ({ IDL }) => {
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'clearOrders' : IDL.Func([IDL.Bool], [IDL.Nat], []),
+    'getAllCancelRequests' : IDL.Func([], [IDL.Vec(CancelRequest)], ['query']),
     'getAllOrders' : IDL.Func([], [IDL.Vec(Order)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getEarlyBirdCount' : IDL.Func([], [IDL.Nat], ['query']),
+    'getOrderById' : IDL.Func([IDL.Text], [IDL.Opt(Order)], ['query']),
+    'getOrdersByEmail' : IDL.Func([IDL.Text], [IDL.Vec(Order)], ['query']),
     'getOrdersByPhone' : IDL.Func([IDL.Text], [IDL.Vec(Order)], ['query']),
     'getStats' : IDL.Func([], [Stats], ['query']),
     'getUserProfile' : IDL.Func(
@@ -133,11 +182,18 @@ export const idlFactory = ({ IDL }) => {
           IDL.Text,
           IDL.Text,
           IDL.Text,
+          IDL.Text,
         ],
         [IDL.Text],
         [],
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'submitCancelRequest' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [IDL.Text],
+        [],
+      ),
+    'updateCancelRequest' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], []),
     'updateOrderStatus' : IDL.Func([IDL.Text, IDL.Text], [IDL.Bool], []),
   });
 };

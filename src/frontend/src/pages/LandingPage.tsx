@@ -17,9 +17,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { useEditableContent } from "../hooks/useEditableContent";
+import { useGetEarlyBirdCount, useGetStats } from "../hooks/useQueries";
 
 interface Props {
   onOpenOrderModal: (edition: "base" | "premium" | "elite") => void;
+  onNavigatePolicies?: () => void;
 }
 
 const plannerSections = [
@@ -134,7 +137,31 @@ function FeatureCell({ value }: { value: FeatureValue }) {
   );
 }
 
-export default function LandingPage({ onOpenOrderModal }: Props) {
+export default function LandingPage({
+  onOpenOrderModal,
+  onNavigatePolicies,
+}: Props) {
+  const { data: stats } = useGetStats();
+  const { data: earlyBirdCountData } = useGetEarlyBirdCount();
+  const content = useEditableContent();
+
+  // Dynamic Most Popular: whichever edition has most orders
+  const baseOrders = stats ? Number(stats.baseOrders) : 0;
+  const premiumOrders = stats ? Number(stats.premiumOrders) : 0;
+  const eliteOrders = stats ? Number(stats.eliteOrders) : 0;
+
+  let mostPopular: "base" | "premium" | "elite" = "base";
+  if (premiumOrders > baseOrders && premiumOrders >= eliteOrders) {
+    mostPopular = "premium";
+  } else if (eliteOrders > baseOrders && eliteOrders > premiumOrders) {
+    mostPopular = "elite";
+  }
+
+  const earlyBirdRemaining = Math.max(
+    0,
+    20 - Number(earlyBirdCountData ?? BigInt(0)),
+  );
+
   return (
     <div className="bg-background">
       {/* ── HERO ── */}
@@ -153,18 +180,23 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
           >
             <div className="early-bird-badge mb-6 mx-auto inline-flex">
               <Star className="w-4 h-4" />
-              First 20 orders get ₹50 off!
+              {earlyBirdRemaining > 0
+                ? `Only ${earlyBirdRemaining} early bird spots left — ₹50 off!`
+                : content.earlyBirdText}
             </div>
             <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6 max-w-4xl mx-auto">
-              The Planner That Turns{" "}
-              <span className="text-gold italic">Serious Students</span> Into
-              Toppers
+              {content.heroTitle.split("Serious Students").length > 1 ? (
+                <>
+                  {content.heroTitle.split("Serious Students")[0]}
+                  <span className="text-gold italic">Serious Students</span>
+                  {content.heroTitle.split("Serious Students")[1]}
+                </>
+              ) : (
+                content.heroTitle
+              )}
             </h1>
             <p className="text-white/75 text-lg sm:text-xl max-w-2xl mx-auto mb-8 font-body leading-relaxed">
-              100-page Premium Exam Success Kit. Eco-friendly. India-made.{" "}
-              <strong className="text-white">
-                Designed to get you results.
-              </strong>
+              {content.heroSubtitle}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap">
               <button
@@ -201,6 +233,14 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                 <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
             </div>
+            {earlyBirdRemaining > 0 && (
+              <p className="text-white/60 text-sm font-body mt-3">
+                <span className="text-gold font-semibold">
+                  {earlyBirdRemaining}
+                </span>{" "}
+                of 20 early bird spots remaining
+              </p>
+            )}
           </motion.div>
 
           {/* Product Images — 3 columns */}
@@ -224,6 +264,13 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                     "0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.25)",
                 }}
               >
+                {mostPopular === "base" && (
+                  <div className="absolute top-4 right-4 z-10">
+                    <Badge className="bg-coral text-white border-0 font-sans-display text-xs">
+                      ✦ Most Popular
+                    </Badge>
+                  </div>
+                )}
                 <img
                   src="/assets/generated/exam-kit-hero.dim_800x600.jpg"
                   alt="Base Eco Edition planner"
@@ -265,11 +312,13 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                     "0 8px 32px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.2)",
                 }}
               >
-                <div className="absolute top-4 right-4 z-10">
-                  <Badge className="bg-coral text-white border-0 font-sans-display text-xs">
-                    ✦ Popular
-                  </Badge>
-                </div>
+                {mostPopular === "premium" && (
+                  <div className="absolute top-4 right-4 z-10">
+                    <Badge className="bg-coral text-white border-0 font-sans-display text-xs">
+                      ✦ Most Popular
+                    </Badge>
+                  </div>
+                )}
                 <img
                   src="/assets/generated/exam-kit-premium.dim_800x600.jpg"
                   alt="Premium Color Edition planner"
@@ -314,17 +363,25 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                     "0 8px 32px rgba(217,119,6,0.2), inset 0 1px 0 rgba(255,230,100,0.25)",
                 }}
               >
-                <div className="absolute top-4 right-4 z-10">
-                  <Badge
-                    className="border-0 font-sans-display text-xs text-white"
-                    style={{
-                      background: "linear-gradient(135deg, #d97706, #f59e0b)",
-                    }}
-                  >
-                    <Crown className="w-3 h-3 mr-1" />
-                    Elite
-                  </Badge>
-                </div>
+                {mostPopular === "elite" ? (
+                  <div className="absolute top-4 right-4 z-10">
+                    <Badge className="bg-coral text-white border-0 font-sans-display text-xs">
+                      ✦ Most Popular
+                    </Badge>
+                  </div>
+                ) : (
+                  <div className="absolute top-4 right-4 z-10">
+                    <Badge
+                      className="border-0 font-sans-display text-xs text-white"
+                      style={{
+                        background: "linear-gradient(135deg, #d97706, #f59e0b)",
+                      }}
+                    >
+                      <Crown className="w-3 h-3 mr-1" />
+                      Elite
+                    </Badge>
+                  </div>
+                )}
                 <img
                   src="/assets/generated/exam-kit-elite.dim_800x600.jpg"
                   alt="Elite Custom Book planner"
@@ -391,14 +448,30 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
           >
             {/* Base Card */}
             <motion.div variants={itemVariants} className="relative">
+              {mostPopular === "base" && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span className="bg-coral text-white text-sm font-sans-display font-bold px-4 py-1 rounded-full shadow-lg">
+                    Most Popular ✦
+                  </span>
+                </div>
+              )}
               <div
                 className="glass-light glass-hover rounded-3xl overflow-hidden h-full flex flex-col"
-                style={{ border: "1.5px solid rgba(180,155,100,0.35)" }}
+                style={{
+                  border:
+                    mostPopular === "base"
+                      ? "1.5px solid oklch(0.62 0.18 30 / 0.45)"
+                      : "1.5px solid rgba(180,155,100,0.25)",
+                  boxShadow:
+                    mostPopular === "base"
+                      ? "0 4px 24px oklch(0.62 0.18 30 / 0.08), inset 0 1px 0 rgba(255,255,255,0.95)"
+                      : undefined,
+                }}
               >
                 <div
                   className="px-6 py-5 flex items-center justify-between"
                   style={{
-                    background: "oklch(0.82 0.07 60 / 0.18)",
+                    background: "oklch(0.62 0.18 30 / 0.06)",
                     borderBottom: "1px solid rgba(180,155,100,0.2)",
                   }}
                 >
@@ -407,7 +480,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                       Base Eco
                     </h3>
                     <p className="text-muted-foreground text-sm font-body mt-0.5">
-                      For serious students
+                      Best Value
                     </p>
                   </div>
                   <div className="text-right">
@@ -454,24 +527,27 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
 
             {/* Premium Card */}
             <motion.div variants={itemVariants} className="relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                <span className="bg-coral text-white text-sm font-sans-display font-bold px-4 py-1 rounded-full shadow-lg">
-                  Most Popular ✦
-                </span>
-              </div>
+              {mostPopular === "premium" && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span className="bg-coral text-white text-sm font-sans-display font-bold px-4 py-1 rounded-full shadow-lg">
+                    Most Popular ✦
+                  </span>
+                </div>
+              )}
               <div
                 className="glass-light glass-hover rounded-3xl overflow-hidden h-full flex flex-col"
                 style={{
-                  border: "1.5px solid oklch(0.62 0.18 30 / 0.45)",
-                  boxShadow:
-                    "0 4px 24px oklch(0.62 0.18 30 / 0.08), inset 0 1px 0 rgba(255,255,255,0.95)",
+                  border:
+                    mostPopular === "premium"
+                      ? "1.5px solid oklch(0.62 0.18 30 / 0.45)"
+                      : "1.5px solid rgba(180,155,100,0.35)",
                 }}
               >
                 <div
                   className="px-6 py-5 flex items-center justify-between"
                   style={{
-                    background: "oklch(0.62 0.18 30 / 0.08)",
-                    borderBottom: "1px solid oklch(0.62 0.18 30 / 0.18)",
+                    background: "oklch(0.82 0.07 60 / 0.12)",
+                    borderBottom: "1px solid rgba(180,155,100,0.2)",
                   }}
                 >
                   <div>
@@ -479,7 +555,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                       Premium Color
                     </h3>
                     <p className="text-muted-foreground text-sm font-body mt-0.5">
-                      For aspirational toppers
+                      Best All Rounder
                     </p>
                   </div>
                   <div className="text-right">
@@ -517,7 +593,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                   <button
                     type="button"
                     onClick={() => onOpenOrderModal("premium")}
-                    className="w-full mt-5 bg-coral text-white font-semibold font-sans-display py-3 rounded-xl hover:opacity-90 transition-opacity"
+                    className="w-full mt-5 bg-forest text-white font-semibold font-sans-display py-3 rounded-xl hover:bg-forest-dark transition-colors"
                     data-ocid="editions.premium_order_button"
                   >
                     Order Premium — ₹549
@@ -528,18 +604,26 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
 
             {/* Elite Card */}
             <motion.div variants={itemVariants} className="relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
-                <span
-                  className="text-white text-sm font-sans-display font-bold px-4 py-1 rounded-full shadow-lg flex items-center gap-1.5"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)",
-                  }}
-                >
-                  <Crown className="w-3.5 h-3.5" />
-                  Personalised
-                </span>
-              </div>
+              {mostPopular === "elite" ? (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span className="bg-coral text-white text-sm font-sans-display font-bold px-4 py-1 rounded-full shadow-lg">
+                    Most Popular ✦
+                  </span>
+                </div>
+              ) : (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                  <span
+                    className="text-white text-sm font-sans-display font-bold px-4 py-1 rounded-full shadow-lg flex items-center gap-1.5"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)",
+                    }}
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    Personalised
+                  </span>
+                </div>
+              )}
               <div
                 className="glass-light glass-hover rounded-3xl overflow-hidden h-full flex flex-col"
                 style={{
@@ -564,7 +648,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
                       </h3>
                     </div>
                     <p className="text-amber-700/80 text-sm font-body">
-                      The ultimate topper kit
+                      Best Customization
                     </p>
                   </div>
                   <div className="text-right">
@@ -685,8 +769,7 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
             transition={{ delay: 0.3 }}
           >
             <p className="font-sans-display font-semibold text-foreground text-lg">
-              💡 Only ₹100 more for Premium. Only ₹200 more for Elite. Most
-              students upgrade.
+              💡 {content.upgradeNudge}
             </p>
             <p className="text-muted-foreground font-body text-sm mt-1">
               The Elite is the only planner in India with YOUR name on the
@@ -930,10 +1013,21 @@ export default function LandingPage({ onOpenOrderModal }: Props) {
               India's premium exam planner
             </p>
           </div>
-          <div className="flex gap-6 text-white/60 text-sm font-body">
-            <span>WhatsApp: +91 9999999999</span>
+          <div className="flex flex-wrap gap-4 text-white/60 text-sm font-body items-center justify-center">
+            <span>WhatsApp: {content.footerPhone}</span>
             <span>•</span>
-            <span>Ships in 2–3 days</span>
+            <span>{content.footerShipping}</span>
+            <span>•</span>
+            {onNavigatePolicies && (
+              <button
+                type="button"
+                onClick={onNavigatePolicies}
+                className="text-white/60 hover:text-white underline underline-offset-2 transition-colors"
+                data-ocid="footer.policies_link"
+              >
+                Policies
+              </button>
+            )}
           </div>
           <div className="text-white/40 text-xs font-body text-center">
             © {new Date().getFullYear()}. Built with ❤️ using{" "}

@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -20,21 +21,32 @@ import {
   AlertTriangle,
   CheckCircle2,
   Crown,
+  ExternalLink,
+  FileText,
   Loader2,
   Smartphone,
   Star,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
 import { usePlaceOrder } from "../hooks/useQueries";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   defaultEdition: "base" | "premium" | "elite";
+  onNavigatePolicies?: () => void;
 }
 
-export default function OrderModal({ open, onClose, defaultEdition }: Props) {
+export default function OrderModal({
+  open,
+  onClose,
+  defaultEdition,
+  onNavigatePolicies,
+}: Props) {
+  const { userEmail } = useAuth();
+
   const [edition, setEdition] = useState<"base" | "premium" | "elite">(
     defaultEdition,
   );
@@ -48,6 +60,7 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
   const [bonusPages, setBonusPages] = useState("");
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [policyChecked, setPolicyChecked] = useState(false);
 
   const { mutate: placeOrder, isPending } = usePlaceOrder();
 
@@ -64,6 +77,7 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
         setExamType("");
         setBonusPages("");
         setErrors({});
+        setPolicyChecked(false);
         setEdition(defaultEdition);
       }, 300);
     }
@@ -84,6 +98,8 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
       if (!examType) newErrors.examType = "Select your exam";
       if (!bonusPages) newErrors.bonusPages = "Choose your bonus 20 pages";
     }
+    if (!policyChecked)
+      newErrors.policy = "Please accept the store policies to continue";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -99,6 +115,7 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
       {
         customerName: name.trim(),
         phone,
+        email: userEmail ?? "",
         address: address.trim(),
         pincode,
         paymentMethod: "UPI",
@@ -200,12 +217,12 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
                     Your order is confirmed!
                   </p>
                   <p className="text-muted-foreground font-body text-sm">
-                    Save your Order ID below. We'll ship within 2–3 business
-                    days.
+                    Your order is pending acceptance. We'll review and confirm
+                    it shortly.
                   </p>
                 </div>
 
-                {/* Order ID */}
+                {/* Order ID - prominent */}
                 <div
                   className="rounded-2xl p-4 text-sm font-body"
                   style={{
@@ -213,9 +230,27 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
                     border: "1px solid oklch(0.88 0.018 75)",
                   }}
                 >
-                  <p className="text-muted-foreground text-xs mb-1">Order ID</p>
-                  <p className="font-semibold text-foreground font-mono text-xs break-all">
-                    {orderId}
+                  <p className="text-muted-foreground text-xs mb-2 font-sans-display font-semibold uppercase tracking-wide">
+                    Your Order ID — save this!
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-bold text-foreground font-mono text-lg tracking-wider">
+                      {orderId}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(orderId ?? "");
+                        toast.success("Order ID copied!");
+                      }}
+                      className="text-xs px-3 py-1.5 rounded-lg font-sans-display font-semibold border border-border hover:bg-muted transition-colors flex-shrink-0"
+                      data-ocid="order.copy_id_button"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-muted-foreground text-xs mt-2 font-body">
+                    Use this ID to track your order on the Track Order page
                   </p>
                 </div>
 
@@ -241,8 +276,11 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
                 </div>
 
                 <p className="text-muted-foreground text-xs font-body">
-                  Track your order anytime using your phone number from the
-                  Track Order page.
+                  Use your Order ID{" "}
+                  <strong className="font-mono text-foreground">
+                    {orderId}
+                  </strong>{" "}
+                  on the Track Order page to track your order.
                 </p>
                 <Button
                   onClick={() => handleOpenChange(false)}
@@ -740,9 +778,84 @@ export default function OrderModal({ open, onClose, defaultEdition }: Props) {
                   </div>
                 </div>
 
+                {/* Policy Snippet */}
+                <div
+                  className="rounded-2xl p-4 space-y-3"
+                  style={{
+                    background: "rgba(51,65,85,0.04)",
+                    border: "1px solid rgba(51,65,85,0.1)",
+                  }}
+                  data-ocid="order.policy_section"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <span className="font-sans-display font-semibold text-sm text-foreground">
+                      Store Policies Summary
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {[
+                      "Cancel within 12 hours only if processing hasn't started",
+                      "Customized (Elite) planners are non-returnable",
+                      "Refunds processed within 5–7 business days after approval",
+                    ].map((pt) => (
+                      <li
+                        key={pt}
+                        className="flex items-start gap-2 text-xs font-body text-muted-foreground"
+                      >
+                        <span className="w-1 h-1 rounded-full bg-muted-foreground/50 flex-shrink-0 mt-1.5" />
+                        {pt}
+                      </li>
+                    ))}
+                  </ul>
+                  {onNavigatePolicies && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onNavigatePolicies();
+                      }}
+                      className="flex items-center gap-1 text-xs font-sans-display font-semibold text-forest hover:underline"
+                      data-ocid="order.see_full_policies_link"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      See full policies →
+                    </button>
+                  )}
+                  <div className="flex items-start gap-3 pt-1">
+                    <Checkbox
+                      id="policy-agree"
+                      checked={policyChecked}
+                      onCheckedChange={(v) => {
+                        setPolicyChecked(!!v);
+                        if (errors.policy)
+                          setErrors((prev) => ({ ...prev, policy: "" }));
+                      }}
+                      className="mt-0.5 flex-shrink-0"
+                      data-ocid="order.policy_checkbox"
+                    />
+                    <Label
+                      htmlFor="policy-agree"
+                      className="cursor-pointer text-xs font-body text-foreground leading-relaxed"
+                    >
+                      I have read and agree to the{" "}
+                      <span className="font-semibold text-forest">
+                        store policies
+                      </span>
+                    </Label>
+                  </div>
+                  {errors.policy && (
+                    <p
+                      className="text-destructive text-xs font-body"
+                      data-ocid="order.policy_error"
+                    >
+                      {errors.policy}
+                    </p>
+                  )}
+                </div>
+
                 <Button
                   type="submit"
-                  disabled={isPending}
+                  disabled={isPending || !policyChecked}
                   className={`w-full font-sans-display font-bold py-3 text-base rounded-xl shadow-lg ${
                     edition === "elite"
                       ? "bg-amber-500 text-white hover:bg-amber-600"

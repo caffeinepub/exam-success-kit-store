@@ -1,31 +1,19 @@
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
+import Principal "mo:core/Principal";
 
 module {
-  type OldOrder = {
+  type UserProfile = {
+    name : Text;
+    phone : Text;
+    email : Text;
+  };
+
+  type Order = {
     id : Text;
     customerName : Text;
     phone : Text;
-    address : Text;
-    pincode : Text;
-    paymentMethod : Text;
-    edition : Text;
-    status : Text;
-    timestamp : Int;
-    isEarlyBird : Bool;
-    pricePaid : Nat;
-  };
-
-  type OldActor = {
-    orders : Map.Map<Text, OldOrder>;
-    nextOrderId : Nat;
-    earlyBirdCount : Nat;
-  };
-
-  type NewOrder = {
-    id : Text;
-    customerName : Text;
-    phone : Text;
+    email : Text;
     address : Text;
     pincode : Text;
     paymentMethod : Text;
@@ -39,26 +27,29 @@ module {
     bonusPages : Text;
   };
 
-  type NewActor = {
-    orders : Map.Map<Text, NewOrder>;
+  type CancelRequest = {
+    id : Text;
+    orderId : Text;
+    customerEmail : Text;
+    customerPhone : Text;
+    reason : Text;
+    requestType : Text;
+    timestamp : Int;
+    status : Text;
+  };
+
+  type OldActor = {
+    orders : Map.Map<Text, Order>;
+    cancelRequests : Map.Map<Text, CancelRequest>;
+    userProfiles : Map.Map<Principal.Principal, UserProfile>;
     nextOrderId : Nat;
+    nextRequestId : Nat;
     earlyBirdCount : Nat;
   };
 
+  type NewActor = OldActor;
+
   public func run(old : OldActor) : NewActor {
-    let newOrders = old.orders.map<Text, OldOrder, NewOrder>(
-      func(_id, oldOrder) {
-        {
-          oldOrder with
-          customName = "";
-          examType = "";
-          bonusPages = "";
-        };
-      }
-    );
-    {
-      old with
-      orders = newOrders;
-    };
+    old;
   };
 };

@@ -1,14 +1,15 @@
 import { Toaster } from "@/components/ui/sonner";
-import { LogOut, User } from "lucide-react";
+import { FileText, LogOut, User } from "lucide-react";
 import { useState } from "react";
 import OrderModal from "./components/OrderModal";
 import SignInModal from "./components/SignInModal";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import AdminPage from "./pages/AdminPage";
 import LandingPage from "./pages/LandingPage";
+import PoliciesPage from "./pages/PoliciesPage";
 import TrackOrderPage from "./pages/TrackOrderPage";
 
-type Page = "home" | "track" | "admin";
+type Page = "home" | "track" | "admin" | "policies";
 
 function AppShell() {
   const { isLoggedIn, isAdmin, userEmail, userPhone, signOut } = useAuth();
@@ -75,7 +76,7 @@ function AppShell() {
           >
             Exam<span className="text-gold">Kit</span>
           </button>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => setCurrentPage("track")}
@@ -83,6 +84,15 @@ function AppShell() {
               data-ocid="nav.track_link"
             >
               Track Order
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage("policies")}
+              className="text-white/70 hover:text-white text-sm font-body transition-colors px-2 py-1 flex items-center gap-1"
+              data-ocid="nav.policies_link"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Policies</span>
             </button>
             {/* Admin link — only visible when logged in as admin */}
             {isAdmin && (
@@ -149,9 +159,13 @@ function AppShell() {
 
       <main className="pt-14">
         {currentPage === "home" && (
-          <LandingPage onOpenOrderModal={openOrderModal} />
+          <LandingPage
+            onOpenOrderModal={openOrderModal}
+            onNavigatePolicies={() => setCurrentPage("policies")}
+          />
         )}
         {currentPage === "track" && <TrackOrderPage />}
+        {currentPage === "policies" && <PoliciesPage />}
         {currentPage === "admin" && (
           <AdminPage onOpenSignIn={() => setSignInOpen(true)} />
         )}
@@ -161,6 +175,10 @@ function AppShell() {
         open={orderModalOpen}
         onClose={() => setOrderModalOpen(false)}
         defaultEdition={defaultEdition}
+        onNavigatePolicies={() => {
+          setOrderModalOpen(false);
+          setCurrentPage("policies");
+        }}
       />
 
       <SignInModal

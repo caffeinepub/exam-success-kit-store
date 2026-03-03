@@ -10,6 +10,16 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface CancelRequest {
+  'id' : string,
+  'status' : string,
+  'customerPhone' : string,
+  'orderId' : string,
+  'timestamp' : bigint,
+  'customerEmail' : string,
+  'requestType' : string,
+  'reason' : string,
+}
 export interface Order {
   'id' : string,
   'customerName' : string,
@@ -17,6 +27,7 @@ export interface Order {
   'paymentMethod' : string,
   'edition' : string,
   'isEarlyBird' : boolean,
+  'email' : string,
   'address' : string,
   'timestamp' : bigint,
   'customName' : string,
@@ -32,28 +43,54 @@ export interface Stats {
   'eliteOrders' : bigint,
   'premiumOrders' : bigint,
   'totalProfit' : bigint,
+  'pendingCancelRequests' : bigint,
   'totalRevenue' : bigint,
   'earlyBirdUsed' : bigint,
 }
-export interface UserProfile { 'name' : string }
+export interface UserProfile {
+  'name' : string,
+  'email' : string,
+  'phone' : string,
+}
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'clearOrders' : ActorMethod<[boolean], bigint>,
+  'getAllCancelRequests' : ActorMethod<[], Array<CancelRequest>>,
   'getAllOrders' : ActorMethod<[], Array<Order>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getEarlyBirdCount' : ActorMethod<[], bigint>,
+  'getOrderById' : ActorMethod<[string], [] | [Order]>,
+  'getOrdersByEmail' : ActorMethod<[string], Array<Order>>,
   'getOrdersByPhone' : ActorMethod<[string], Array<Order>>,
   'getStats' : ActorMethod<[], Stats>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'placeOrder' : ActorMethod<
-    [string, string, string, string, string, string, string, string, string],
+    [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ],
     string
   >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'submitCancelRequest' : ActorMethod<
+    [string, string, string, string, string],
+    string
+  >,
+  'updateCancelRequest' : ActorMethod<[string, string], boolean>,
   'updateOrderStatus' : ActorMethod<[string, string], boolean>,
 }
 export declare const idlService: IDL.ServiceClass;

@@ -1,26 +1,31 @@
 import Map "mo:core/Map";
-import List "mo:core/List";
 import Text "mo:core/Text";
-import Nat "mo:core/Nat";
+import Int "mo:core/Int";
 import Time "mo:core/Time";
-import Iter "mo:core/Iter";
+import Nat "mo:core/Nat";
 import Principal "mo:core/Principal";
+import Iter "mo:core/Iter";
+import Runtime "mo:core/Runtime";
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-import Runtime "mo:core/Runtime";
+import Migration "migration";
 
+(with migration = Migration.run)
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
   public type UserProfile = {
     name : Text;
+    phone : Text;
+    email : Text;
   };
 
-  type Order = {
+  public type Order = {
     id : Text;
     customerName : Text;
     phone : Text;
+    email : Text;
     address : Text;
     pincode : Text;
     paymentMethod : Text;
@@ -34,7 +39,18 @@ actor {
     bonusPages : Text;
   };
 
-  type Stats = {
+  public type CancelRequest = {
+    id : Text;
+    orderId : Text;
+    customerEmail : Text;
+    customerPhone : Text;
+    reason : Text;
+    requestType : Text;
+    timestamp : Int;
+    status : Text;
+  };
+
+  public type Stats = {
     totalOrders : Nat;
     baseOrders : Nat;
     premiumOrders : Nat;
@@ -42,17 +58,20 @@ actor {
     totalRevenue : Nat;
     totalProfit : Nat;
     earlyBirdUsed : Nat;
+    pendingCancelRequests : Nat;
   };
 
   let orders = Map.empty<Text, Order>();
+  let cancelRequests = Map.empty<Text, CancelRequest>();
   let userProfiles = Map.empty<Principal, UserProfile>();
+
   var nextOrderId = 1;
+  var nextRequestId = 1;
   var earlyBirdCount = 0;
 
-  // User profile management functions
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access profiles");
+      Runtime.trap("Unauthorized: Only users can view profiles");
     };
     userProfiles.get(caller);
   };
@@ -71,10 +90,10 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // Order management functions
   public shared ({ caller }) func placeOrder(
     customerName : Text,
     phone : Text,
+    email : Text,
     address : Text,
     pincode : Text,
     paymentMethod : Text,
@@ -83,7 +102,7 @@ actor {
     examType : Text,
     bonusPages : Text,
   ) : async Text {
-    let orderId = nextOrderId.toText();
+    let orderId = "ORD-" # nextOrderId.toText();
     var price = 0;
     var isEarlyBird = false;
 
@@ -104,7 +123,9 @@ actor {
       };
     };
 
-    if (isEarlyBird and (edition == "Base" or edition == "Premium")) {
+    if (isEarlyBird and (
+      edition == "Base" or edition == "Premium"
+    )) {
       earlyBirdCount += 1;
     };
 
@@ -112,6 +133,7 @@ actor {
       id = orderId;
       customerName;
       phone;
+      email;
       address;
       pincode;
       paymentMethod;
@@ -130,17 +152,24 @@ actor {
     orderId;
   };
 
-  // CRITICAL FIX 1: No admin check - any user can look up orders by phone
-  public query ({ caller }) func getOrdersByPhone(phone : Text) : async [Order] {
-    orders.values().toArray().filter(func(o) { o.phone == phone });
-  };
-
-  // CRITICAL FIX 2: No admin check - any user can get all orders
   public query ({ caller }) func getAllOrders() : async [Order] {
     orders.values().toArray();
   };
 
-  // CRITICAL FIX 3: No admin check - any user can update order status
+  public query ({ caller }) func getOrderById(orderId : Text) : async ?Order {
+    orders.get(orderId);
+  };
+
+  public query ({ caller }) func getOrdersByPhone(phone : Text) : async [Order] {
+    let iter = orders.values();
+    iter.filter(func(o) { o.phone == phone }).toArray();
+  };
+
+  public query ({ caller }) func getOrdersByEmail(email : Text) : async [Order] {
+    let iter = orders.values();
+    iter.filter(func(o) { o.email == email }).toArray();
+  };
+
   public shared ({ caller }) func updateOrderStatus(orderId : Text, newStatus : Text) : async Bool {
     switch (orders.get(orderId)) {
       case (null) { false };
@@ -152,7 +181,71 @@ actor {
     };
   };
 
-  // CRITICAL FIX 4: Remove admin check - any user can query stats
+  public shared ({ caller }) func submitCancelRequest(
+    orderId : Text,
+    customerEmail : Text,
+    customerPhone : Text,
+    reason : Text,
+    requestType : Text,
+  ) : async Text {
+    let requestId = nextRequestId.toText();
+    let newRequest : CancelRequest = {
+      id = requestId;
+      orderId;
+      customerEmail;
+      customerPhone;
+      reason;
+      requestType;
+      timestamp = Time.now();
+      status = "Pending";
+    };
+
+    cancelRequests.add(requestId, newRequest);
+    nextRequestId += 1;
+    requestId;
+  };
+
+  public query ({ caller }) func getAllCancelRequests() : async [CancelRequest] {
+    cancelRequests.values().toArray();
+  };
+
+  public shared ({ caller }) func updateCancelRequest(requestId : Text, newStatus : Text) : async Bool {
+    switch (cancelRequests.get(requestId)) {
+      case (null) { false };
+      case (?request) {
+        let updatedRequest : CancelRequest = { request with status = newStatus };
+        cancelRequests.add(requestId, updatedRequest);
+        true;
+      };
+    };
+  };
+
+  public shared ({ caller }) func clearOrders(clearAll : Bool) : async Nat {
+    var deletedCount = 0;
+
+    if (clearAll) {
+      deletedCount := orders.size();
+      orders.clear();
+    } else {
+      let toKeep = Map.empty<Text, Order>();
+      for ((orderId, order) in orders.entries()) {
+        if (order.status != "Delivered") {
+          toKeep.add(orderId, order);
+        } else {
+          deletedCount += 1;
+        };
+      };
+      orders.clear();
+      toKeep.entries().forEach(
+        func((orderId, order)) {
+          orders.add(orderId, order);
+        }
+      );
+    };
+
+    deletedCount;
+  };
+
   public query ({ caller }) func getStats() : async Stats {
     var totalOrders = 0;
     var baseOrders = 0;
@@ -160,6 +253,7 @@ actor {
     var eliteOrders = 0;
     var totalRevenue = 0;
     var totalProfit = 0;
+    var pendingCancelRequests = 0;
 
     for ((_, order) in orders.entries()) {
       totalOrders += 1;
@@ -180,6 +274,12 @@ actor {
       };
     };
 
+    for ((_, request) in cancelRequests.entries()) {
+      if (request.status == "Pending") {
+        pendingCancelRequests += 1;
+      };
+    };
+
     {
       totalOrders;
       baseOrders;
@@ -188,7 +288,11 @@ actor {
       totalRevenue;
       totalProfit;
       earlyBirdUsed = earlyBirdCount;
+      pendingCancelRequests;
     };
   };
-};
 
+  public query ({ caller }) func getEarlyBirdCount() : async Nat {
+    earlyBirdCount;
+  };
+};
