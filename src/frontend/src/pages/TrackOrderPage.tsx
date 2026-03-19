@@ -14,10 +14,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AlertCircle,
+  CalendarDays,
   CheckCircle2,
   Clock,
+  EyeOff,
   Globe,
   Loader2,
+  Lock,
   Mail,
   Package,
   Phone,
@@ -115,7 +118,15 @@ const statusConfig: Record<
     color: "bg-red-50 text-red-700 border-red-200",
     icon: XCircle,
   },
+  Declined: {
+    label: "Declined",
+    color: "bg-red-50 text-red-800 border-red-300",
+    icon: XCircle,
+  },
 };
+
+// Steps that appear BEFORE payment received (so we don't show it unless admin marks it)
+const PRE_PAYMENT_STATUSES = ["Pending", "Order Accepted"];
 
 const STATUS_STEPS = [
   "Pending",
@@ -137,23 +148,39 @@ function isCancelEligible(order: Order): boolean {
   return Date.now() - orderTime < twelveHours;
 }
 
+function getOrderDueDate(orderId: string): string | null {
+  try {
+    const data = JSON.parse(
+      localStorage.getItem("examkit_order_duedates") ?? "{}",
+    );
+    return data[orderId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function StatusStepper({
   current,
   isElite,
 }: { current: string; isElite: boolean }) {
-  const steps = isElite
+  // Filter steps: only show Payment Received if the order has reached that stage
+  const allSteps = isElite
     ? STATUS_STEPS.map((s) => (s === "Printing" ? "Printing Custom" : s))
     : STATUS_STEPS;
 
+  // If status is still pre-payment, hide Payment Received step from the stepper
+  const steps = PRE_PAYMENT_STATUSES.includes(current)
+    ? allSteps.filter((s) => s !== "Payment Received")
+    : allSteps;
+
   const idx = steps.indexOf(current);
 
-  // Special case: cancelled
-  if (current === "Cancelled") {
+  if (current === "Cancelled" || current === "Declined") {
     return (
       <div className="mt-4 mb-1 px-3 py-2 rounded-xl bg-red-50 border border-red-100 flex items-center gap-2">
         <XCircle className="w-4 h-4 text-red-500" />
         <span className="text-red-700 text-xs font-sans-display font-semibold">
-          Order Cancelled
+          Order {current}
         </span>
       </div>
     );
@@ -280,7 +307,7 @@ function CancelRequestModal({
                 }}
               >
                 <p className="text-red-700">
-                  Order #{order.id.slice(0, 8)}… · {order.edition}
+                  Order #{order.id} · {order.edition}
                 </p>
               </div>
               <div>
@@ -361,12 +388,36 @@ function CancelRequestModal({
   );
 }
 
+function PrivateField({
+  children,
+  isVisible,
+}: { children: React.ReactNode; isVisible: boolean }) {
+  if (isVisible) return <>{children}</>;
+  return (
+    <span className="inline-flex items-center gap-1 text-muted-foreground text-xs font-body italic">
+      <Lock className="w-3 h-3" />
+      Sign in to view
+    </span>
+  );
+}
+
 function OrderCard({ order, index }: { order: Order; index: number }) {
+  const { isLoggedIn, userEmail, userPhone } = useAuth();
   const status = statusConfig[order.status] || statusConfig.Pending;
   const Icon = status.icon;
   const date = new Date(Number(order.timestamp) / 1_000_000);
   const isElite = order.edition.toLowerCase().includes("elite");
-  const canCancel = isCancelEligible(order);
+  const dueDate = getOrderDueDate(order.id);
+
+  // Determine if the current user is the owner of this order
+  const isOwner =
+    isLoggedIn &&
+    ((userEmail &&
+      order.email &&
+      userEmail.toLowerCase() === order.email.toLowerCase()) ||
+      (userPhone && order.phone && userPhone === order.phone));
+
+  const canCancel = isOwner ? isCancelEligible(order) : false;
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   return (
@@ -378,20 +429,33 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
         className="glass-light glass-hover rounded-2xl p-5"
         data-ocid={`track.order_item.${index + 1}`}
       >
-        <div className="flex items-start justify-between gap-3 mb-3">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-2">
           <div>
-            <div className="font-sans-display font-bold text-foreground">
-              {order.customerName}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-sans-display font-semibold ${
+                  status.color
+                }`}
+              >
+                <Icon className="w-3 h-3" />
+                {status.label}
+              </span>
+              {order.isEarlyBird && (
+                <span className="text-[10px] bg-gold/20 text-foreground px-2 py-0.5 rounded-full font-body">
+                  🐦 Early Bird
+                </span>
+              )}
             </div>
-            <div className="text-muted-foreground text-xs font-body mt-0.5">
-              Order #{order.id.slice(0, 8)}...
-            </div>
+            <p className="text-xs text-muted-foreground font-mono mt-1">
+              Order ID: <strong>{order.id}</strong>
+            </p>
           </div>
           <Badge
-            className={`${status.color} border font-sans-display text-xs px-2.5 py-1 flex items-center gap-1.5 flex-shrink-0`}
+            variant="outline"
+            className="text-xs font-sans-display shrink-0"
           >
-            <Icon className="w-3 h-3" />
-            {status.label}
+            {order.edition}
           </Badge>
         </div>
 
@@ -448,7 +512,7 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
           </div>
           <div>
             <p className="text-muted-foreground font-body text-xs mb-0.5">
-              Date
+              Order Date
             </p>
             <p className="font-sans-display font-semibold text-foreground">
               {date.toLocaleDateString("en-IN", {
@@ -458,18 +522,73 @@ function OrderCard({ order, index }: { order: Order; index: number }) {
               })}
             </p>
           </div>
+
+          {dueDate && (
+            <div className="col-span-2">
+              <p className="text-muted-foreground font-body text-xs mb-0.5 flex items-center gap-1">
+                <CalendarDays className="w-3 h-3" />
+                Preferred Delivery Date
+              </p>
+              <p className="font-sans-display font-semibold text-forest">
+                {dueDate}
+              </p>
+            </div>
+          )}
+
+          {/* Private fields — only visible to owner */}
           <div className="col-span-2">
             <p className="text-muted-foreground font-body text-xs mb-0.5">
+              Customer Name
+            </p>
+            <p className="font-body text-foreground text-sm">
+              <PrivateField isVisible={!!isOwner}>
+                {order.customerName}
+              </PrivateField>
+            </p>
+          </div>
+
+          <div className="col-span-2">
+            <p className="text-muted-foreground font-body text-xs mb-0.5 flex items-center gap-1">
+              {isOwner ? null : <EyeOff className="w-3 h-3" />}
               Delivery Address
             </p>
             <p className="font-body text-foreground text-sm leading-relaxed">
-              {order.address}, {order.pincode}
+              <PrivateField isVisible={!!isOwner}>
+                {order.address}, {order.pincode}
+              </PrivateField>
+            </p>
+          </div>
+
+          <div>
+            <p className="text-muted-foreground font-body text-xs mb-0.5 flex items-center gap-1">
+              {isOwner ? null : <EyeOff className="w-3 h-3" />}
+              Phone
+            </p>
+            <p className="font-sans-display font-semibold text-foreground">
+              <PrivateField isVisible={!!isOwner}>{order.phone}</PrivateField>
             </p>
           </div>
         </div>
 
-        {/* Cancel button — only if eligible */}
-        {canCancel && order.status !== "Cancelled" && (
+        {/* Sign in prompt for private details */}
+        {!isOwner && (
+          <div
+            className="mt-3 px-3 py-2 rounded-xl flex items-center gap-2 text-xs"
+            style={{
+              background: "rgba(99,102,241,0.05)",
+              border: "1px solid rgba(99,102,241,0.15)",
+            }}
+          >
+            <Lock className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+            <p className="text-indigo-700 font-body">
+              <span className="font-semibold">Sign in</span> with the account
+              used to place this order to view full details.
+            </p>
+          </div>
+        )}
+
+        {/* Cancel button — only if owner, eligible, and correct status */}
+        {isOwner && canCancel && order.status !== "Cancelled" && (
           <div className="mt-4 pt-4 border-t border-border/40">
             <Button
               variant="outline"
@@ -606,7 +725,8 @@ export default function TrackOrderPage() {
             Track Your Order
           </h1>
           <p className="text-muted-foreground font-body">
-            Enter your email or phone number to view your orders
+            Enter your details to view your orders. Full details visible after
+            sign-in.
           </p>
         </motion.div>
 
@@ -665,7 +785,6 @@ export default function TrackOrderPage() {
                   Phone Number
                 </Label>
                 <div className="flex gap-2">
-                  {/* Country code picker */}
                   <div className="relative">
                     <button
                       type="button"
@@ -753,12 +872,6 @@ export default function TrackOrderPage() {
                     <Search className="w-4 h-4" />
                   </Button>
                 </div>
-                {selectedCountry.code !== "+91" && (
-                  <p className="text-xs text-amber-700 font-body bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-                    Note: We currently ship within India only. Orders from other
-                    countries may not be fulfilled.
-                  </p>
-                )}
               </form>
             </TabsContent>
 
@@ -806,8 +919,7 @@ export default function TrackOrderPage() {
                   Order ID
                 </Label>
                 <p className="text-muted-foreground text-xs font-body -mt-1">
-                  Enter the Order ID shown after placing your order (e.g.
-                  ORD-1).
+                  Enter the Order ID shown after placing your order.
                 </p>
                 <div className="flex gap-2">
                   <div className="relative flex-1">

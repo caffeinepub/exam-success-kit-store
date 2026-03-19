@@ -97,7 +97,9 @@ export interface Stats {
     totalProfit: bigint;
     pendingCancelRequests: bigint;
     totalRevenue: bigint;
-    earlyBirdUsed: bigint;
+    earlyBirdUsedBase: bigint;
+    earlyBirdUsedPremium: bigint;
+    investmentAmount: bigint;
 }
 export interface CancelRequest {
     id: string;
@@ -125,6 +127,10 @@ export interface Order {
     pincode: string;
     examType: string;
     bonusPages: string;
+    country: string;
+    dueDate: string;
+    priority: string;
+    customPriority: boolean;
 }
 export interface UserProfile {
     name: string;
@@ -151,7 +157,7 @@ export interface backendInterface {
     getStats(): Promise<Stats>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
-    placeOrder(customerName: string, phone: string, email: string, address: string, pincode: string, paymentMethod: string, edition: string, customName: string, examType: string, bonusPages: string): Promise<string>;
+    placeOrder(customerName: string, phone: string, email: string, address: string, pincode: string, country: string, paymentMethod: string, edition: string, customName: string, examType: string, bonusPages: string, dueDate: string): Promise<string>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     submitCancelRequest(orderId: string, customerEmail: string, customerPhone: string, reason: string, requestType: string): Promise<string>;
     updateCancelRequest(requestId: string, newStatus: string): Promise<boolean>;
@@ -356,17 +362,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async placeOrder(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: string, arg6: string, arg7: string, arg8: string, arg9: string): Promise<string> {
+    async placeOrder(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: string, arg6: string, arg7: string, arg8: string, arg9: string, arg10: string, arg11: string): Promise<string> {
         if (this.processError) {
             try {
-                const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+                const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+            const result = await this.actor.placeOrder(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
             return result;
         }
     }

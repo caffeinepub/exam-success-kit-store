@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -33,31 +34,41 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertTriangle,
   BarChart3,
+  BookOpen,
+  CalendarDays,
   CheckCircle2,
-  Crown,
+  ClipboardList,
   DollarSign,
   Edit2,
+  Flag,
   Inbox,
+  ListTodo,
   Lock,
   LogOut,
+  Minus,
   Package,
+  Plus,
+  RotateCcw,
   Save,
   Search,
   ShieldAlert,
   ShoppingBag,
   Star,
+  StickyNote,
   Target,
   Trash2,
   TrendingUp,
   Truck,
+  Wallet,
   X,
   XCircle,
 } from "lucide-react";
-import { motion } from "motion/react";
-import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { CancelRequest, Order } from "../backend.d";
 import { useAuth } from "../context/AuthContext";
@@ -67,17 +78,106 @@ import {
   useGetAllCancelRequests,
   useGetAllOrders,
   useGetStats,
+  useSetOrderPriority,
   useUpdateCancelRequest,
   useUpdateOrderStatus,
 } from "../hooks/useQueries";
 
+// ── Constants ──────────────────────────────────────────────────────────────
 const ADMIN_PASSCODE = "RDS@2012";
 const ADMIN_RECOVERY_CODE = "Inanis";
 const ADMIN_EDIT_PASSWORD = "RDS@EDIT";
+const ADMIN_INFO_PASSWORD = "RDS@INFO";
 const CLEAR_PASSCODE = "Inanis";
 const OVERRIDE_PASSWORD = "RDS@2012";
+const INVESTMENT_AMOUNT = 6000; // ₹5-6k investment
+const AUTO_LOGOUT_MS = 10 * 60 * 1000; // 10 minutes
 
-// ── Status config ──────────────────────────────────────────────────────────
+// ── Local storage helpers ──────────────────────────────────────────────────
+interface BudgetEntry {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  type: "income" | "expense";
+  date: string;
+}
+
+interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+  auto: boolean; // auto-generated from orders
+}
+
+interface StatsOverride {
+  enabled: boolean;
+  totalOrders: number;
+  totalRevenue: number;
+  totalProfit: number;
+  baseOrders: number;
+  premiumOrders: number;
+  eliteOrders: number;
+}
+
+function loadBudget(): BudgetEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem("examkit_budget") ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveBudget(entries: BudgetEntry[]) {
+  localStorage.setItem("examkit_budget", JSON.stringify(entries));
+}
+
+function loadTodos(): TodoItem[] {
+  try {
+    return JSON.parse(localStorage.getItem("examkit_todos") ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveTodos(items: TodoItem[]) {
+  localStorage.setItem("examkit_todos", JSON.stringify(items));
+}
+
+function loadStatsOverride(): StatsOverride {
+  try {
+    const raw = localStorage.getItem("examkit_stats_override");
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return {
+    enabled: false,
+    totalOrders: 0,
+    totalRevenue: 0,
+    totalProfit: 0,
+    baseOrders: 0,
+    premiumOrders: 0,
+    eliteOrders: 0,
+  };
+}
+
+function saveStatsOverride(o: StatsOverride) {
+  localStorage.setItem("examkit_stats_override", JSON.stringify(o));
+}
+
+function getOrderDueDate(orderId: string): string | null {
+  try {
+    const data = JSON.parse(
+      localStorage.getItem("examkit_order_duedates") ?? "{}",
+    );
+    return data[orderId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Status helpers ─────────────────────────────────────────────────────────
 const statusStyles: Record<string, string> = {
   Pending: "bg-yellow-50 text-yellow-800 border-yellow-200",
   "Order Accepted": "bg-blue-50 text-blue-800 border-blue-200",
@@ -90,9 +190,10 @@ const statusStyles: Record<string, string> = {
   Shipped: "bg-blue-50 text-blue-700 border-blue-200",
   Delivered: "bg-green-50 text-green-700 border-green-200",
   Cancelled: "bg-red-50 text-red-700 border-red-200",
+  Declined: "bg-red-50 text-red-800 border-red-300",
 };
 
-const ALL_STATUSES = [
+const ADMIN_STATUS_OPTIONS = [
   "Pending",
   "Order Accepted",
   "Payment Received",
@@ -103,620 +204,329 @@ const ALL_STATUSES = [
   "Dispatched",
   "Shipped",
   "Delivered",
-  "Cancelled",
 ];
 
-const statusIcons: Record<string, typeof Package> = {
-  Pending: Package,
-  "Order Accepted": CheckCircle2,
-  "Payment Received": CheckCircle2,
-  Processing: Package,
-  Printing: Package,
-  "Printing Custom": Package,
-  Packing: Package,
-  Dispatched: Truck,
-  Shipped: Truck,
-  Delivered: CheckCircle2,
-  Cancelled: XCircle,
-};
+function statusToTab(status: string): string {
+  if (status === "Pending") return "pending";
+  if (status === "Order Accepted") return "accepted";
+  if (
+    [
+      "Payment Received",
+      "Processing",
+      "Printing",
+      "Printing Custom",
+      "Packing",
+    ].includes(status)
+  )
+    return "processing";
+  if (["Dispatched", "Shipped"].includes(status)) return "dispatched";
+  if (status === "Delivered") return "delivered";
+  if (status === "Declined") return "declined";
+  if (status === "Cancelled") return "cancelled";
+  return "pending";
+}
 
-// ── Cost Structure Data ──
+// ── Cost data ──────────────────────────────────────────────────────────────
 const baseCosts = [
-  { component: "Printing 100 pages", cost: 90 },
-  { component: "Cover thick matte (kraft)", cost: 30 },
-  { component: "Spiral binding", cost: 20 },
-  { component: "Sticker pack (3 minimal)", cost: 10 },
-  { component: "Desk cards", cost: 15 },
-  { component: "Eco wrap packaging", cost: 20 },
+  { component: "B/W print 110 pages", cost: 110 },
+  { component: "Kraft cover", cost: 30 },
+  { component: "Perfect binding", cost: 25 },
+  { component: "Stickers (3 minimal)", cost: 15 },
+  { component: "Eco wrap packaging", cost: 25 },
   { component: "Shipping", cost: 60 },
 ];
 
 const premiumCosts = [
-  { component: "Full color printing 100 pages", cost: 130 },
-  { component: "Bold color theme cover", cost: 40 },
-  { component: "Spiral binding", cost: 20 },
-  { component: "Vibrant sticker pack (8)", cost: 20 },
-  { component: "Colored section tabs + ribbon", cost: 15 },
-  { component: "Premium eco box", cost: 35 },
+  { component: "Full color print 110 pages", cost: 220 },
+  { component: "Bold color cover", cost: 40 },
+  { component: "Perfect binding", cost: 25 },
+  { component: "Vibrant sticker pack (8)", cost: 25 },
+  { component: "Ribbon + section tabs", cost: 10 },
+  { component: "Premium eco box", cost: 30 },
   { component: "Shipping", cost: 60 },
 ];
 
 const eliteCosts = [
-  { component: "Full color printing 120 pages", cost: 160 },
+  { component: "Full color print 140 pages", cost: 280 },
   { component: "Gold custom cover", cost: 60 },
   { component: "Perfect binding", cost: 30 },
-  { component: "Foil sticker pack (8 + foil)", cost: 35 },
+  { component: "Foil sticker pack", cost: 35 },
   { component: "Gold foil ribbon + dividers", cost: 25 },
   { component: "Thick eco mailer box", cost: 50 },
-  { component: "Custom personalisation (name/exam)", cost: 20 },
   { component: "Shipping", cost: 70 },
 ];
 
-const ninetyDayPlan = [
-  {
-    month: "Month 1 – Validation",
-    weeks: [
-      { week: "Week 1", focus: "Design + research", goal: "Final prototype" },
-      { week: "Week 2", focus: "Feedback", goal: "10 testers" },
-      { week: "Week 3", focus: "Instagram", goal: "20 posts" },
-      { week: "Week 4", focus: "Pre-orders", goal: "20 paid orders" },
-    ],
-  },
-  {
-    month: "Month 2 – Launch",
-    weeks: [
-      { week: "Week 5", focus: "Print 50 units", goal: "Inventory ready" },
-      { week: "Week 6", focus: "Deliver + collect", goal: "Reviews in hand" },
-      { week: "Week 7", focus: "Content push", goal: "5 testimonials" },
-      { week: "Week 8", focus: "Paid ads test", goal: "Break-even" },
-    ],
-  },
-  {
-    month: "Month 3 – Scale",
-    weeks: [
-      { week: "Week 9", focus: "Reinvest profit", goal: "Print 100 units" },
-      { week: "Week 10", focus: "Ambassador drive", goal: "20 partners" },
-      { week: "Week 11", focus: "Bundle marketing", goal: "Increase AOV" },
-      { week: "Week 12", focus: "Revenue target", goal: "₹50,000 month" },
-    ],
-  },
-];
+// ── Sub-components ─────────────────────────────────────────────────────────
 
-const scalingRoadmap = [
-  {
-    stage: "Stage 1",
-    revenue: "₹50K/month",
-    action: "Improve packaging quality",
-  },
-  { stage: "Stage 2", revenue: "₹1L/month", action: "Launch JEE/NEET edition" },
-  { stage: "Stage 3", revenue: "₹3L/month", action: "Coaching partnerships" },
-  { stage: "Stage 4", revenue: "₹10L/month", action: "Dropship bundle model" },
-  { stage: "Stage 5", revenue: "₹20L+/month", action: "App development" },
-];
-
-const contentCalendar = [
-  {
-    day: 1,
-    topic: "Why students fail",
-    hook: "\"You don't fail because you're dumb…\"",
-    cta: "Comment TOPPER",
-  },
-  {
-    day: 2,
-    topic: "Planner flip-through",
-    hook: '"This is how serious students plan"',
-    cta: "DM to order",
-  },
-  {
-    day: 3,
-    topic: "Study with me",
-    hook: '"2 hrs no phone challenge"',
-    cta: "Follow",
-  },
-  {
-    day: 4,
-    topic: "Parent reaction",
-    hook: '"My mom loved this page"',
-    cta: "Save",
-  },
-  {
-    day: 5,
-    topic: "Mock tracker demo",
-    hook: '"Track scores like this"',
-    cta: "Link in bio",
-  },
-];
-
-const competitors = [
-  {
-    brand: "Odd Giraffe",
-    platform: "Website",
-    product: "Planner",
-    price: "₹699",
-    strength: "Aesthetic",
-    weakness: "Not exam-focused",
-    gap: "Serious exam tracking",
-  },
-  {
-    brand: "Factor Notes",
-    platform: "Website",
-    product: "Planner",
-    price: "₹499",
-    strength: "Clean layout",
-    weakness: "No parent involvement",
-    gap: "Parent review system",
-  },
-  {
-    brand: "Amazon India",
-    platform: "Amazon",
-    product: "Study planner",
-    price: "₹399",
-    strength: "Cheap",
-    weakness: "Generic",
-    gap: "Student-built story",
-  },
-  {
-    brand: "Flipkart sellers",
-    platform: "Flipkart",
-    product: "Exam planner",
-    price: "₹299–599",
-    strength: "Availability",
-    weakness: "Weak branding",
-    gap: "Premium positioning",
-  },
-];
-
-function EditionBadge({ edition }: { edition: string }) {
-  if (edition.includes("Elite")) {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-sans-display bg-amber-50 text-amber-700 border-amber-300">
-        <Crown className="w-3 h-3" />
-        Elite
-      </span>
-    );
-  }
-  if (edition.includes("Premium")) {
-    return (
-      <span className="text-xs px-2 py-0.5 rounded-full border font-sans-display bg-coral/10 text-coral border-coral/30">
-        Premium
-      </span>
-    );
-  }
-  return (
-    <span className="text-xs px-2 py-0.5 rounded-full border font-sans-display bg-muted text-muted-foreground border-border">
-      Base
-    </span>
-  );
-}
-
-// ── Override Modal ────────────────────────────────────────────────────────
-function OverrideModal({
-  order,
-  onClose,
+function DeclineOverrideModal({
+  orderId,
   onConfirm,
+  onClose,
 }: {
-  order: Order;
+  orderId: string;
+  onConfirm: () => void;
   onClose: () => void;
-  onConfirm: (orderId: string, action: string) => void;
 }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password !== OVERRIDE_PASSWORD) {
-      setError("Incorrect password");
+  const handleConfirm = () => {
+    if (pwd !== OVERRIDE_PASSWORD) {
+      setErr("Incorrect password");
       return;
     }
-    onConfirm(order.id, "Cancelled");
-    onClose();
+    onConfirm();
   };
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
       style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
     >
       <motion.div
-        className="relative rounded-3xl overflow-hidden border border-white/20 w-full max-w-sm"
+        className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl w-full max-w-sm"
         style={{
-          background: "rgba(255,255,255,0.97)",
+          background:
+            "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
           backdropFilter: "blur(24px)",
-          boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)",
+          WebkitBackdropFilter: "blur(24px)",
         }}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        data-ocid="admin.override_modal"
+        data-ocid="admin.decline_override_modal"
       >
         <div
-          className="absolute top-0 left-0 right-0 h-1 rounded-t-3xl"
-          style={{ background: "linear-gradient(90deg, #ef4444, #f87171)" }}
+          className="absolute inset-0 -z-10 opacity-80"
+          style={{
+            background:
+              "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
+          }}
         />
-        <div className="p-6 pt-7">
-          <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-5 h-5 text-red-500" />
-            <h2 className="font-display text-xl font-bold text-foreground">
-              Admin Override
-            </h2>
+        <div className="relative p-8">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{
+              background: "rgba(239,68,68,0.2)",
+              border: "1px solid rgba(239,68,68,0.3)",
+            }}
+          >
+            <ShieldAlert className="w-7 h-7 text-red-400" />
           </div>
-          <p className="text-muted-foreground font-body text-sm mb-4">
-            Force cancel order{" "}
-            <span className="font-mono text-xs">#{order.id.slice(0, 8)}…</span>{" "}
-            for <strong>{order.customerName}</strong>. This bypasses the normal
-            cancellation window.
+          <h3 className="font-display text-xl font-bold text-white text-center mb-1">
+            Decline Order
+          </h3>
+          <p className="text-white/60 font-body text-xs text-center mb-5">
+            Order{" "}
+            <span className="font-mono font-bold text-white/80">{orderId}</span>{" "}
+            will be marked as <strong className="text-red-400">Declined</strong>
+            .
           </p>
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div>
-              <Label className="font-sans-display font-semibold text-sm mb-1.5 block">
-                Admin Password
-              </Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setError("");
-                }}
-                placeholder="Enter admin password"
-                className="font-mono"
-                data-ocid="admin.override_password_input"
-              />
-              {error && (
-                <p className="text-destructive text-xs mt-1 font-body">
-                  {error}
-                </p>
-              )}
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 rounded-xl font-sans-display"
-                onClick={onClose}
-                data-ocid="admin.override_cancel_button"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={!password.trim()}
-                className="flex-1 rounded-xl font-sans-display font-bold bg-red-600 hover:bg-red-700 text-white"
-                data-ocid="admin.override_confirm_button"
-              >
-                Force Cancel
-              </Button>
-            </div>
-          </form>
+          <Input
+            type="password"
+            value={pwd}
+            onChange={(e) => {
+              setPwd(e.target.value);
+              setErr("");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleConfirm();
+            }}
+            placeholder="Admin password..."
+            className="bg-white/10 border-white/25 text-white placeholder:text-white/35 text-center mb-2"
+            data-ocid="admin.decline_password_input"
+          />
+          {err && (
+            <p className="text-red-400 text-xs text-center mb-2">{err}</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={onClose}
+              className="flex-1 border-white/20 text-white/70 hover:bg-white/10"
+              data-ocid="admin.decline_cancel_button"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              disabled={!pwd.trim()}
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold"
+              data-ocid="admin.decline_confirm_button"
+            >
+              Decline
+            </Button>
+          </div>
         </div>
       </motion.div>
     </div>
   );
 }
 
-// ── OrderRow ───────────────────────────────────────────────────────────────
 function OrderRow({
   order,
   index,
-  onStatusUpdate,
+  onStatusChange,
+  onDecline,
+  onAccept,
 }: {
   order: Order;
   index: number;
-  onStatusUpdate: (orderId: string, status: string) => void;
+  onStatusChange: (id: string, status: string) => void;
+  onDecline: (id: string) => void;
+  onAccept: (id: string) => void;
 }) {
-  const statusStyle = statusStyles[order.status] || statusStyles.Pending;
-  const StatusIcon = statusIcons[order.status] || Package;
-  const date = new Date(Number(order.timestamp) / 1_000_000);
-  const isPending = order.status === "Pending";
-  const [showOverride, setShowOverride] = useState(false);
+  const { mutate: setPriority } = useSetOrderPriority();
+  const dueDate = getOrderDueDate(order.id);
+  const isElite = order.edition.toLowerCase().includes("elite");
 
-  return (
-    <>
-      <TableRow data-ocid={`admin.order_row.${index + 1}`}>
-        <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-          {order.id}
-        </TableCell>
-        <TableCell className="font-sans-display font-semibold text-foreground text-sm">
-          {order.customerName}
-          {order.customName && (
-            <span className="text-xs text-amber-600 block font-body">
-              Cover: {order.customName}
-            </span>
-          )}
-        </TableCell>
-        <TableCell className="text-sm font-body">{order.phone}</TableCell>
-        <TableCell>
-          <EditionBadge edition={order.edition} />
-        </TableCell>
-        <TableCell className="font-sans-display font-bold text-foreground">
-          ₹{order.pricePaid.toString()}
-          {order.isEarlyBird && (
-            <span className="ml-1 text-xs text-muted-foreground font-body">
-              (EB)
-            </span>
-          )}
-        </TableCell>
-        <TableCell>
-          <Select
-            value={order.status}
-            onValueChange={(val) => onStatusUpdate(order.id, val)}
-          >
-            <SelectTrigger
-              className={`w-36 h-7 text-xs border ${statusStyle}`}
-              data-ocid={`admin.status_select.${index + 1}`}
-            >
-              <SelectValue>
-                <span className="flex items-center gap-1">
-                  <StatusIcon className="w-3 h-3" />
-                  {order.status}
-                </span>
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {ALL_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground font-body">
-          {date.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {isPending && (
-              <Button
-                size="sm"
-                className="h-7 text-xs px-2 bg-blue-600 hover:bg-blue-700 text-white font-sans-display"
-                onClick={() => onStatusUpdate(order.id, "Order Accepted")}
-                data-ocid={`admin.accept_order_button.${index + 1}`}
-              >
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                Accept
-              </Button>
-            )}
-            {order.status !== "Cancelled" && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs px-2 border-red-200 text-red-600 hover:bg-red-50 font-sans-display"
-                onClick={() => setShowOverride(true)}
-                data-ocid={`admin.override_button.${index + 1}`}
-              >
-                Override
-              </Button>
-            )}
-          </div>
-        </TableCell>
-      </TableRow>
-      {showOverride && (
-        <OverrideModal
-          order={order}
-          onClose={() => setShowOverride(false)}
-          onConfirm={(orderId, _action) => onStatusUpdate(orderId, "Cancelled")}
-        />
-      )}
-    </>
-  );
-}
-
-// ── Cancel Requests Panel ──────────────────────────────────────────────────
-function CancelRequestsPanel() {
-  const { data: requests, isLoading } = useGetAllCancelRequests();
-  const { mutate: updateRequest } = useUpdateCancelRequest();
-  const { mutate: updateStatus } = useUpdateOrderStatus();
-  const [confirmModal, setConfirmModal] = useState<{
-    requestId: string;
-    orderId: string;
-    action: "Accepted" | "Declined";
-  } | null>(null);
-  const [password, setPassword] = useState("");
-  const [pwError, setPwError] = useState("");
-
-  const handleConfirm = () => {
-    if (password !== OVERRIDE_PASSWORD) {
-      setPwError("Incorrect password");
-      return;
+  // Priority color based on due date
+  let priorityColor = "text-muted-foreground";
+  let priorityDot = "bg-muted";
+  if (dueDate) {
+    const d = new Date(dueDate);
+    const daysUntil = Math.ceil(
+      (d.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    );
+    if (daysUntil <= 2) {
+      priorityColor = "text-red-600";
+      priorityDot = "bg-red-500";
+    } else if (daysUntil <= 5) {
+      priorityColor = "text-orange-500";
+      priorityDot = "bg-orange-400";
+    } else {
+      priorityColor = "text-green-600";
+      priorityDot = "bg-green-500";
     }
-    if (!confirmModal) return;
-    updateRequest(
-      { requestId: confirmModal.requestId, newStatus: confirmModal.action },
-      {
-        onSuccess: () => {
-          if (confirmModal.action === "Accepted") {
-            updateStatus({
-              orderId: confirmModal.orderId,
-              newStatus: "Cancelled",
-            });
-            toast.success("Request accepted — order cancelled");
-          } else {
-            toast.success("Request declined");
-          }
-          setConfirmModal(null);
-          setPassword("");
-          setPwError("");
-        },
-        onError: () => toast.error("Failed to update request"),
-      },
-    );
-  };
-
-  const pending = requests?.filter((r) => r.status === "Pending") ?? [];
-  const resolved = requests?.filter((r) => r.status !== "Pending") ?? [];
-
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[1, 2].map((i) => (
-          <Skeleton key={i} className="h-24 rounded-2xl" />
-        ))}
-      </div>
-    );
   }
 
   return (
-    <div className="space-y-4">
-      {pending.length === 0 && (
-        <div
-          className="text-center py-14 glass-light rounded-2xl"
-          data-ocid="admin.requests_empty_state"
-        >
-          <Inbox className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-          <p className="font-sans-display font-semibold text-foreground">
-            No pending requests
+    <TableRow
+      className="glass-light rounded-xl"
+      data-ocid={`admin.order_item.${index + 1}`}
+    >
+      <TableCell className="font-mono text-xs font-bold">{order.id}</TableCell>
+      <TableCell>
+        <div>
+          <p className="font-sans-display font-semibold text-sm text-foreground">
+            {order.customerName}
           </p>
-          <p className="text-muted-foreground text-sm font-body mt-1">
-            All cancel/refund requests will appear here
+          <p className="text-xs text-muted-foreground font-body">
+            {order.email || order.phone}
           </p>
         </div>
-      )}
-
-      {pending.length > 0 && (
-        <div>
-          <h3 className="font-sans-display font-bold text-sm text-foreground mb-3 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
-            Pending ({pending.length})
-          </h3>
-          <div className="space-y-3">
-            {pending.map((req, idx) => (
-              <RequestCard
-                key={req.id}
-                req={req}
-                index={idx}
-                onAccept={() =>
-                  setConfirmModal({
-                    requestId: req.id,
-                    orderId: req.orderId,
-                    action: "Accepted",
-                  })
-                }
-                onDecline={() =>
-                  setConfirmModal({
-                    requestId: req.id,
-                    orderId: req.orderId,
-                    action: "Declined",
-                  })
-                }
-              />
-            ))}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1.5">
+          {isElite && <span className="text-amber-500 text-xs">👑</span>}
+          <span className="text-sm font-sans-display">{order.edition}</span>
+          {order.isEarlyBird && (
+            <span className="text-[10px] bg-gold/20 px-1 rounded font-body">
+              EB
+            </span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${priorityDot}`} />
+            <span className={`text-xs font-body ${priorityColor}`}>
+              {dueDate ? dueDate.split(" ").slice(0, 2).join(" ") : "—"}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            {(["1", "2", "3"] as const).map((p) => {
+              const isActive = order.priority === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() =>
+                    setPriority({ orderId: order.id, priority: p })
+                  }
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md transition-all ${
+                    isActive
+                      ? "bg-amber-500 text-white shadow-sm"
+                      : "bg-white/50 text-muted-foreground border border-border hover:bg-amber-50 hover:text-amber-600"
+                  }`}
+                  data-ocid={`admin.order_priority_${p}.${index + 1}`}
+                >
+                  P{p}
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
-
-      {resolved.length > 0 && (
-        <div>
-          <h3 className="font-sans-display font-bold text-sm text-muted-foreground mb-3">
-            Resolved ({resolved.length})
-          </h3>
-          <div className="space-y-3">
-            {resolved.map((req, idx) => (
-              <RequestCard
-                key={req.id}
-                req={req}
-                index={idx + pending.length}
-                readonly
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Confirm modal */}
-      {confirmModal && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center px-4"
-          style={{
-            background: "rgba(0,0,0,0.5)",
-            backdropFilter: "blur(4px)",
-          }}
+      </TableCell>
+      <TableCell>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full border font-sans-display ${
+            statusStyles[order.status] ??
+            "bg-gray-50 text-gray-600 border-gray-200"
+          }`}
         >
-          <motion.div
-            className="relative rounded-3xl overflow-hidden w-full max-w-sm bg-white shadow-2xl"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            data-ocid="admin.request_confirm_modal"
+          {order.status}
+        </span>
+      </TableCell>
+      <TableCell>
+        <Select
+          value={order.status}
+          onValueChange={(v) => onStatusChange(order.id, v)}
+        >
+          <SelectTrigger
+            className="h-8 text-xs w-36"
+            data-ocid={`admin.status_select.${index + 1}`}
           >
-            <div className="p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <ShieldAlert className="w-5 h-5 text-amber-500" />
-                <h3 className="font-display text-lg font-bold text-foreground">
-                  Confirm{" "}
-                  {confirmModal.action === "Accepted" ? "Accept" : "Decline"}
-                </h3>
-              </div>
-              <p className="text-muted-foreground font-body text-sm mb-4">
-                {confirmModal.action === "Accepted"
-                  ? "This will accept the request and cancel the related order."
-                  : "This will decline the request. Customer will be notified."}
-              </p>
-              <div className="space-y-3">
-                <div>
-                  <Label className="font-sans-display font-semibold text-sm mb-1.5 block">
-                    Admin Password
-                  </Label>
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      setPwError("");
-                    }}
-                    placeholder="Enter admin password"
-                    className="font-mono"
-                    data-ocid="admin.request_confirm_password_input"
-                  />
-                  {pwError && (
-                    <p className="text-destructive text-xs mt-1 font-body">
-                      {pwError}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="flex-1 rounded-xl font-sans-display"
-                    onClick={() => {
-                      setConfirmModal(null);
-                      setPassword("");
-                      setPwError("");
-                    }}
-                    data-ocid="admin.request_confirm_cancel_button"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    disabled={!password.trim()}
-                    onClick={handleConfirm}
-                    className={`flex-1 rounded-xl font-sans-display font-bold ${
-                      confirmModal.action === "Accepted"
-                        ? "bg-green-600 hover:bg-green-700 text-white"
-                        : "bg-red-600 hover:bg-red-700 text-white"
-                    }`}
-                    data-ocid="admin.request_confirm_submit_button"
-                  >
-                    {confirmModal.action === "Accepted" ? "Accept" : "Decline"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ADMIN_STATUS_OPTIONS.map((s) => (
+              <SelectItem key={s} value={s} className="text-xs">
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell>
+        <div className="flex gap-1.5 flex-wrap">
+          {order.status === "Pending" && (
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white px-2"
+              onClick={() => onAccept(order.id)}
+              data-ocid={`admin.accept_button.${index + 1}`}
+            >
+              <CheckCircle2 className="w-3 h-3 mr-1" />
+              Accept
+            </Button>
+          )}
+          {order.status !== "Declined" && order.status !== "Cancelled" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50 px-2"
+              onClick={() => onDecline(order.id)}
+              data-ocid={`admin.decline_button.${index + 1}`}
+            >
+              <XCircle className="w-3 h-3 mr-1" />
+              Decline
+            </Button>
+          )}
         </div>
-      )}
-    </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
 function RequestCard({
   req,
   index,
-  readonly = false,
   onAccept,
   onDecline,
 }: {
   req: CancelRequest;
   index: number;
-  readonly?: boolean;
   onAccept?: () => void;
   onDecline?: () => void;
 }) {
@@ -741,8 +551,7 @@ function RequestCard({
             {req.requestType === "cancel" ? "Cancel" : "Refund"} Request
           </span>
           <p className="text-xs text-muted-foreground font-body mt-1">
-            Order:{" "}
-            <span className="font-mono">{req.orderId.slice(0, 10)}…</span>
+            Order: <span className="font-mono">{req.orderId}</span>
           </p>
         </div>
         <div className="text-right">
@@ -771,7 +580,7 @@ function RequestCard({
           {req.reason}
         </p>
       </div>
-      {!readonly && req.status === "Pending" && (
+      {req.status === "Pending" && (
         <div className="flex gap-2">
           <Button
             size="sm"
@@ -798,7 +607,6 @@ function RequestCard({
   );
 }
 
-// ── Clear History Dialog ───────────────────────────────────────────────────
 function ClearHistoryDialog() {
   const [confirmText, setConfirmText] = useState("");
   const [open, setOpen] = useState(false);
@@ -851,8 +659,7 @@ function ClearHistoryDialog() {
             Clear Order History
           </AlertDialogTitle>
           <AlertDialogDescription className="font-body text-sm">
-            This will permanently delete selected orders. Choose what to clear
-            and enter your confirmation code.
+            Choose what to clear and enter your confirmation code.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="py-2 space-y-4">
@@ -917,7 +724,6 @@ function ClearHistoryDialog() {
   );
 }
 
-// ── Floating Edit Bar ──────────────────────────────────────────────────────
 function FloatingEditBar({
   onSave,
   onCancel,
@@ -975,6 +781,755 @@ function FloatingEditBar({
   );
 }
 
+// ── Admin Notes Tab ───────────────────────────────────────────────────────
+function AdminNotesTab() {
+  const STORAGE_KEY = "admin_notes";
+  const [notes, setNotes] = useState<string>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [savedIndicator, setSavedIndicator] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleChange = (val: string) => {
+    setNotes(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, val);
+      } catch {}
+      setLastSaved(new Date());
+      setSavedIndicator(true);
+      setTimeout(() => setSavedIndicator(false), 2000);
+    }, 500);
+  };
+
+  const handleClear = () => {
+    setNotes("");
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+    setLastSaved(new Date());
+    setShowClearConfirm(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div
+        className="rounded-2xl p-5"
+        style={{
+          background: "rgba(255,255,255,0.06)",
+          backdropFilter: "blur(20px)",
+          border: "1px solid rgba(255,255,255,0.18)",
+          boxShadow:
+            "0 4px 24px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8)",
+        }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <StickyNote className="w-4 h-4 text-amber-600" />
+            <span className="font-sans-display font-semibold text-foreground text-sm">
+              Admin Notes
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <AnimatePresence>
+              {savedIndicator && (
+                <motion.span
+                  key="saved"
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="text-xs text-green-600 font-sans-display"
+                >
+                  ✓ Saved
+                </motion.span>
+              )}
+            </AnimatePresence>
+            {lastSaved && !savedIndicator && (
+              <span className="text-xs text-muted-foreground font-body">
+                Last saved {lastSaved.toLocaleTimeString()}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(true)}
+              className="text-xs text-red-500 hover:text-red-700 font-sans-display transition-colors flex items-center gap-1"
+              data-ocid="admin.notes_clear_button"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear
+            </button>
+          </div>
+        </div>
+        <textarea
+          value={notes}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder="Type your private notes here... ideas, reminders, order notes, supplier contacts, anything you need."
+          className="w-full min-h-[400px] bg-transparent text-foreground font-body text-sm resize-none focus:outline-none placeholder:text-muted-foreground/50 leading-relaxed"
+          data-ocid="admin.notes.textarea"
+          style={{ scrollbarWidth: "none" }}
+        />
+      </div>
+
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent
+          style={{
+            background: "rgba(255,255,255,0.92)",
+            backdropFilter: "blur(32px)",
+            border: "1px solid rgba(255,255,255,0.6)",
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-sans-display">
+              Clear all notes?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="font-body">
+              This will permanently delete all your notes. This action cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              data-ocid="admin.notes_clear_cancel_button"
+              className="font-sans-display"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClear}
+              data-ocid="admin.notes_clear_confirm_button"
+              className="bg-red-500 hover:bg-red-600 font-sans-display"
+            >
+              Clear Notes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ── Budget Planner Tab ─────────────────────────────────────────────────────
+function BudgetPlannerTab() {
+  const [entries, setEntries] = useState<BudgetEntry[]>(loadBudget);
+  const [desc, setDesc] = useState("");
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("Investment");
+  const [type, setType] = useState<"income" | "expense">("expense");
+  const [investment, setInvestment] = useState(() =>
+    Number(localStorage.getItem("examkit_investment") ?? INVESTMENT_AMOUNT),
+  );
+  const [editingInvestment, setEditingInvestment] = useState(false);
+  const [invInput, setInvInput] = useState("");
+
+  // Stock
+  const [baseStock, setBaseStock] = useState(() =>
+    Number(localStorage.getItem("examkit_stock_base") ?? 0),
+  );
+  const [premiumStock, setPremiumStock] = useState(() =>
+    Number(localStorage.getItem("examkit_stock_premium") ?? 0),
+  );
+  const [eliteStock, setEliteStock] = useState(() =>
+    Number(localStorage.getItem("examkit_stock_elite") ?? 0),
+  );
+
+  const totalIncome = entries
+    .filter((e) => e.type === "income")
+    .reduce((s, e) => s + e.amount, 0);
+  const totalExpense = entries
+    .filter((e) => e.type === "expense")
+    .reduce((s, e) => s + e.amount, 0);
+  const balance = investment + totalIncome - totalExpense;
+
+  const addEntry = () => {
+    if (!desc.trim() || !amount || Number(amount) <= 0) return;
+    const entry: BudgetEntry = {
+      id: Date.now().toString(),
+      description: desc.trim(),
+      amount: Number(amount),
+      category,
+      type,
+      date: new Date().toLocaleDateString("en-IN"),
+    };
+    const updated = [entry, ...entries];
+    setEntries(updated);
+    saveBudget(updated);
+    setDesc("");
+    setAmount("");
+    toast.success("Entry added");
+  };
+
+  const removeEntry = (id: string) => {
+    const updated = entries.filter((e) => e.id !== id);
+    setEntries(updated);
+    saveBudget(updated);
+  };
+
+  const saveStock = () => {
+    localStorage.setItem("examkit_stock_base", baseStock.toString());
+    localStorage.setItem("examkit_stock_premium", premiumStock.toString());
+    localStorage.setItem("examkit_stock_elite", eliteStock.toString());
+    toast.success("Stock updated");
+  };
+
+  const saveInvestment = () => {
+    const val = Number(invInput);
+    if (!val || val <= 0) return;
+    localStorage.setItem("examkit_investment", val.toString());
+    setInvestment(val);
+    setEditingInvestment(false);
+    toast.success("Investment updated");
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Investment */}
+      <div
+        className="glass-light rounded-2xl p-5"
+        data-ocid="admin.budget_panel"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-sans-display font-bold text-foreground flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-forest" />
+            Investment & Balance
+          </h3>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div
+            className="rounded-xl p-3 text-center"
+            style={{
+              background: "rgba(99,102,241,0.06)",
+              border: "1px solid rgba(99,102,241,0.15)",
+            }}
+          >
+            <p className="text-xs text-muted-foreground font-body">
+              Investment
+            </p>
+            {editingInvestment ? (
+              <div className="flex gap-1 mt-1">
+                <Input
+                  type="number"
+                  value={invInput}
+                  onChange={(e) => setInvInput(e.target.value)}
+                  className="h-7 text-xs text-center"
+                  placeholder={investment.toString()}
+                  data-ocid="admin.investment_input"
+                />
+                <Button
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={saveInvestment}
+                >
+                  <Save className="w-3 h-3" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1">
+                <p className="font-bold text-lg text-foreground">
+                  ₹{investment.toLocaleString("en-IN")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInvInput(investment.toString());
+                    setEditingInvestment(true);
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                  data-ocid="admin.edit_investment_button"
+                >
+                  <Edit2 className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
+          <div
+            className="rounded-xl p-3 text-center"
+            style={{
+              background: "rgba(16,185,129,0.06)",
+              border: "1px solid rgba(16,185,129,0.15)",
+            }}
+          >
+            <p className="text-xs text-muted-foreground font-body">
+              Total Income
+            </p>
+            <p className="font-bold text-lg text-green-700">
+              +₹{totalIncome.toLocaleString("en-IN")}
+            </p>
+          </div>
+          <div
+            className="rounded-xl p-3 text-center"
+            style={{
+              background:
+                balance >= 0 ? "rgba(16,185,129,0.06)" : "rgba(239,68,68,0.06)",
+              border:
+                balance >= 0
+                  ? "1px solid rgba(16,185,129,0.15)"
+                  : "1px solid rgba(239,68,68,0.15)",
+            }}
+          >
+            <p className="text-xs text-muted-foreground font-body">
+              Net Balance
+            </p>
+            <p
+              className={`font-bold text-lg ${
+                balance >= 0 ? "text-green-700" : "text-red-600"
+              }`}
+            >
+              {balance >= 0 ? "+" : ""}₹{balance.toLocaleString("en-IN")}
+            </p>
+          </div>
+        </div>
+
+        {/* Add entry */}
+        <div className="grid grid-cols-1 gap-2">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setType("income")}
+              className={`flex-1 py-2 rounded-xl text-sm font-sans-display font-semibold border transition-all ${
+                type === "income"
+                  ? "bg-green-600 text-white border-green-600"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+              data-ocid="admin.income_toggle"
+            >
+              <Plus className="w-3.5 h-3.5 inline mr-1" />
+              Income
+            </button>
+            <button
+              type="button"
+              onClick={() => setType("expense")}
+              className={`flex-1 py-2 rounded-xl text-sm font-sans-display font-semibold border transition-all ${
+                type === "expense"
+                  ? "bg-red-600 text-white border-red-600"
+                  : "border-border text-muted-foreground hover:bg-muted"
+              }`}
+              data-ocid="admin.expense_toggle"
+            >
+              <Minus className="w-3.5 h-3.5 inline mr-1" />
+              Expense
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              placeholder="Description"
+              className="flex-1 bg-white/70"
+              data-ocid="admin.budget_desc_input"
+            />
+            <Input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Amount"
+              className="w-28 bg-white/70"
+              data-ocid="admin.budget_amount_input"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger
+                className="flex-1 bg-white/70"
+                data-ocid="admin.budget_category_select"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[
+                  "Investment",
+                  "Stock Purchase",
+                  "Marketing",
+                  "Shipping",
+                  "Other Income",
+                  "Other Expense",
+                ].map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={addEntry}
+              className="bg-forest text-white hover:bg-forest/90"
+              data-ocid="admin.budget_add_button"
+            >
+              <Plus className="w-4 h-4" />
+              Add
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Entries list */}
+      {entries.length > 0 && (
+        <div className="glass-light rounded-2xl p-5">
+          <h3 className="font-sans-display font-bold text-foreground mb-3">
+            Transaction Log
+          </h3>
+          <div className="space-y-2">
+            {entries.map((e, i) => (
+              <div
+                key={e.id}
+                className="flex items-center justify-between p-2.5 rounded-xl"
+                style={{
+                  background:
+                    e.type === "income"
+                      ? "rgba(16,185,129,0.04)"
+                      : "rgba(239,68,68,0.04)",
+                  border:
+                    e.type === "income"
+                      ? "1px solid rgba(16,185,129,0.12)"
+                      : "1px solid rgba(239,68,68,0.12)",
+                }}
+                data-ocid={`admin.budget_item.${i + 1}`}
+              >
+                <div>
+                  <p className="font-sans-display font-semibold text-sm text-foreground">
+                    {e.description}
+                  </p>
+                  <p className="text-xs text-muted-foreground font-body">
+                    {e.category} · {e.date}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`font-bold text-sm font-mono ${
+                      e.type === "income" ? "text-green-700" : "text-red-600"
+                    }`}
+                  >
+                    {e.type === "income" ? "+" : "-"}₹
+                    {e.amount.toLocaleString("en-IN")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeEntry(e.id)}
+                    className="text-muted-foreground hover:text-red-500"
+                    data-ocid={`admin.budget_delete_button.${i + 1}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stock Tracker */}
+      <div
+        className="glass-light rounded-2xl p-5"
+        data-ocid="admin.stock_panel"
+      >
+        <h3 className="font-sans-display font-bold text-foreground mb-4 flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-forest" />
+          Stock Tracker
+        </h3>
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          {[
+            {
+              label: "Base Eco",
+              value: baseStock,
+              set: setBaseStock,
+              key: "base",
+            },
+            {
+              label: "Premium",
+              value: premiumStock,
+              set: setPremiumStock,
+              key: "premium",
+            },
+            {
+              label: "Elite",
+              value: eliteStock,
+              set: setEliteStock,
+              key: "elite",
+            },
+          ].map(({ label, value, set }) => (
+            <div
+              key={label}
+              className="rounded-xl p-3 text-center"
+              style={{
+                background:
+                  value < 5 ? "rgba(239,68,68,0.05)" : "rgba(16,185,129,0.05)",
+                border:
+                  value < 5
+                    ? "1px solid rgba(239,68,68,0.15)"
+                    : "1px solid rgba(16,185,129,0.15)",
+              }}
+            >
+              <p className="text-xs text-muted-foreground font-body mb-1">
+                {label}
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => set((v) => Math.max(0, v - 1))}
+                  className="w-6 h-6 rounded-lg bg-red-100 text-red-700 flex items-center justify-center text-sm font-bold hover:bg-red-200"
+                >
+                  -
+                </button>
+                <span className="font-bold text-xl text-foreground w-8 text-center">
+                  {value}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => set((v) => v + 1)}
+                  className="w-6 h-6 rounded-lg bg-green-100 text-green-700 flex items-center justify-center text-sm font-bold hover:bg-green-200"
+                >
+                  +
+                </button>
+              </div>
+              {value < 5 && (
+                <p className="text-[10px] text-red-600 mt-1 font-body">
+                  Low stock!
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+        <Button
+          onClick={saveStock}
+          size="sm"
+          className="w-full bg-forest text-white hover:bg-forest/90"
+          data-ocid="admin.save_stock_button"
+        >
+          <Save className="w-3.5 h-3.5 mr-1.5" />
+          Save Stock
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Todo List Tab ──────────────────────────────────────────────────────────
+function TodoListTab({ orders }: { orders: Order[] }) {
+  const [todos, setTodos] = useState<TodoItem[]>(loadTodos);
+  const [newTodo, setNewTodo] = useState("");
+
+  // Generate auto todos from orders
+  const autoTodos: TodoItem[] = [
+    ...orders
+      .filter((o) => o.status === "Pending")
+      .map((o) => ({
+        id: `auto-accept-${o.id}`,
+        text: `Approve order ${o.id} (${o.edition})`,
+        done: false,
+        auto: true,
+      })),
+    ...orders
+      .filter((o) => ["Order Accepted", "Payment Received"].includes(o.status))
+      .map((o) => ({
+        id: `auto-process-${o.id}`,
+        text: `Begin processing order ${o.id} (${o.edition})`,
+        done: false,
+        auto: true,
+      })),
+    ...orders
+      .filter((o) =>
+        ["Processing", "Printing", "Printing Custom"].includes(o.status),
+      )
+      .map((o) => ({
+        id: `auto-pack-${o.id}`,
+        text: `Prepare packing for order ${o.id}`,
+        done: false,
+        auto: true,
+      })),
+    ...orders
+      .filter((o) => o.status === "Packing")
+      .map((o) => ({
+        id: `auto-dispatch-${o.id}`,
+        text: `Dispatch order ${o.id}`,
+        done: false,
+        auto: true,
+      })),
+  ];
+
+  const allItems = [...autoTodos, ...todos];
+
+  const addTodo = () => {
+    if (!newTodo.trim()) return;
+    const item: TodoItem = {
+      id: Date.now().toString(),
+      text: newTodo.trim(),
+      done: false,
+      auto: false,
+    };
+    const updated = [...todos, item];
+    setTodos(updated);
+    saveTodos(updated);
+    setNewTodo("");
+  };
+
+  const toggleDone = (id: string, done: boolean) => {
+    const updated = todos.map((t) => (t.id === id ? { ...t, done } : t));
+    setTodos(updated);
+    saveTodos(updated);
+  };
+
+  const deleteTodo = (id: string) => {
+    const updated = todos.filter((t) => t.id !== id);
+    setTodos(updated);
+    saveTodos(updated);
+  };
+
+  const pending = allItems.filter((t) => !t.done);
+  const done = allItems.filter((t) => t.done);
+
+  return (
+    <div className="space-y-5" data-ocid="admin.todo_panel">
+      <div className="glass-light rounded-2xl p-5">
+        <h3 className="font-sans-display font-bold text-foreground mb-4 flex items-center gap-2">
+          <ListTodo className="w-4 h-4 text-forest" />
+          To-Do ({pending.length} pending)
+        </h3>
+
+        {/* Add manual todo */}
+        <div className="flex gap-2 mb-5">
+          <Input
+            value={newTodo}
+            onChange={(e) => setNewTodo(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addTodo();
+            }}
+            placeholder="Add a task..."
+            className="flex-1 bg-white/70"
+            data-ocid="admin.todo_input"
+          />
+          <Button
+            onClick={addTodo}
+            disabled={!newTodo.trim()}
+            className="bg-forest text-white hover:bg-forest/90"
+            data-ocid="admin.todo_add_button"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
+
+        {/* Pending items */}
+        <div className="space-y-2">
+          {pending.map((item, i) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-3 p-3 rounded-xl"
+              style={{
+                background: item.auto
+                  ? "rgba(99,102,241,0.04)"
+                  : "rgba(255,255,255,0.5)",
+                border: item.auto
+                  ? "1px solid rgba(99,102,241,0.12)"
+                  : "1px solid rgba(0,0,0,0.06)",
+              }}
+              data-ocid={`admin.todo_item.${i + 1}`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (!item.auto) toggleDone(item.id, true);
+                }}
+                className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                  item.auto
+                    ? "border-indigo-300 bg-indigo-50 cursor-default"
+                    : "border-border hover:border-forest cursor-pointer"
+                }`}
+                data-ocid={`admin.todo_checkbox.${i + 1}`}
+              />
+              <span className="font-body text-sm text-foreground flex-1">
+                {item.text}
+              </span>
+              {item.auto && (
+                <span className="text-[10px] text-indigo-500 font-body bg-indigo-50 px-1.5 py-0.5 rounded-full">
+                  auto
+                </span>
+              )}
+              {!item.auto && (
+                <button
+                  type="button"
+                  onClick={() => deleteTodo(item.id)}
+                  className="text-muted-foreground hover:text-red-500"
+                  data-ocid={`admin.todo_delete_button.${i + 1}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+          {pending.length === 0 && (
+            <div
+              className="text-center py-8 text-muted-foreground font-body text-sm"
+              data-ocid="admin.todo_empty_state"
+            >
+              All caught up! No pending tasks. ✓
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Done items */}
+      {done.length > 0 && (
+        <div className="glass-light rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-sans-display font-semibold text-muted-foreground text-sm">
+              Completed ({done.length})
+            </h3>
+            <button
+              type="button"
+              onClick={() => {
+                // Remove manual completed todos, keep auto ones out of display
+                const updated = todos.filter((t) => !t.done);
+                setTodos(updated);
+                saveTodos(updated);
+              }}
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-body px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+              data-ocid="admin.todo_clear_completed_button"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear
+            </button>
+          </div>
+          <div className="space-y-2">
+            {done.map((item, i) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 p-3 rounded-xl opacity-60"
+                style={{
+                  background: "rgba(255,255,255,0.3)",
+                  border: "1px solid rgba(0,0,0,0.04)",
+                }}
+                data-ocid={`admin.todo_done_item.${i + 1}`}
+              >
+                <div className="w-5 h-5 rounded-md bg-forest border-2 border-forest flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="w-3 h-3 text-white" />
+                </div>
+                <span className="font-body text-sm text-muted-foreground flex-1 line-through">
+                  {item.text}
+                </span>
+                {!item.auto && (
+                  <button
+                    type="button"
+                    onClick={() => toggleDone(item.id, false)}
+                    className="text-muted-foreground hover:text-foreground"
+                    data-ocid={`admin.todo_undo_button.${i + 1}`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main AdminPage ─────────────────────────────────────────────────────────
 export default function AdminPage({
   onOpenSignIn,
@@ -987,20 +1542,73 @@ export default function AdminPage({
   const [showForgot, setShowForgot] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
 
-  // Edit mode state
+  // Edit mode
   const [editMode, setEditMode] = useState(false);
   const [showEditPasswordModal, setShowEditPasswordModal] = useState(false);
   const [editPassword, setEditPassword] = useState("");
   const [editPasswordError, setEditPasswordError] = useState("");
-
   const { content: editableContent, save: saveContent } =
     useEditableContentAdmin();
   const [editDraft, setEditDraft] = useState(editableContent);
 
+  // Info edit mode
+  const [infoEditUnlocked, setInfoEditUnlocked] = useState(false);
+  const [showInfoEditModal, setShowInfoEditModal] = useState(false);
+  const [infoPassword, setInfoPassword] = useState("");
+  const [infoPasswordError, setInfoPasswordError] = useState("");
+  const [statsOverride, setStatsOverrideState] =
+    useState<StatsOverride>(loadStatsOverride);
+  const [overrideDraft, setOverrideDraft] =
+    useState<StatsOverride>(loadStatsOverride);
+
+  // Decline modal
+  const [declineOrderId, setDeclineOrderId] = useState<string | null>(null);
+
+  // Queries
   const { data: stats, isLoading: isLoadingStats } = useGetStats();
   const { data: orders, isLoading: isLoadingOrders } = useGetAllOrders();
+  const { data: cancelRequests } = useGetAllCancelRequests();
   const { mutate: updateStatus } = useUpdateOrderStatus();
+  const { mutate: updateCancelRequest } = useUpdateCancelRequest();
+
+  // Search
   const [orderSearchId, setOrderSearchId] = useState("");
+
+  // Auto-logout after 10 minutes inactivity
+  const lastActivityRef = useRef(Date.now());
+  useEffect(() => {
+    if (!passcodeUnlocked) return;
+
+    const resetTimer = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const interval = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > AUTO_LOGOUT_MS) {
+        sessionStorage.removeItem("adminUnlocked");
+        setPasscodeUnlocked(false);
+        toast.info("Admin session expired after 10 minutes of inactivity");
+      }
+    }, 30_000); // check every 30s
+
+    window.addEventListener("mousemove", resetTimer);
+    window.addEventListener("keydown", resetTimer);
+    window.addEventListener("click", resetTimer);
+
+    // Clear on tab close
+    const handleUnload = () => {
+      sessionStorage.removeItem("adminUnlocked");
+    };
+    window.addEventListener("beforeunload", handleUnload);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("mousemove", resetTimer);
+      window.removeEventListener("keydown", resetTimer);
+      window.removeEventListener("click", resetTimer);
+      window.removeEventListener("beforeunload", handleUnload);
+    };
+  }, [passcodeUnlocked]);
 
   const filteredOrders = orders
     ? orderSearchId.trim()
@@ -1010,14 +1618,114 @@ export default function AdminPage({
       : orders
     : [];
 
-  const pendingCancelRequests = stats ? Number(stats.pendingCancelRequests) : 0;
+  // Order tabs
+  const ordersByTab = {
+    toWorkOn: filteredOrders.filter(
+      (o) =>
+        statusToTab(o.status) === "pending" ||
+        statusToTab(o.status) === "accepted",
+    ),
+    pending: filteredOrders.filter((o) => statusToTab(o.status) === "pending"),
+    accepted: filteredOrders.filter(
+      (o) => statusToTab(o.status) === "accepted",
+    ),
+    processing: filteredOrders.filter(
+      (o) => statusToTab(o.status) === "processing",
+    ),
+    dispatched: filteredOrders.filter(
+      (o) => statusToTab(o.status) === "dispatched",
+    ),
+    delivered: filteredOrders.filter(
+      (o) => statusToTab(o.status) === "delivered",
+    ),
+    declined: filteredOrders.filter(
+      (o) => statusToTab(o.status) === "declined",
+    ),
+    cancelled: filteredOrders.filter(
+      (o) => statusToTab(o.status) === "cancelled",
+    ),
+  };
+
+  // Stats values (with optional override)
+  const rawStats = stats;
+  const useOverride = statsOverride.enabled;
+  const totalOrders = useOverride
+    ? statsOverride.totalOrders
+    : rawStats
+      ? Number(rawStats.totalOrders)
+      : 0;
+  const totalRevenue = useOverride
+    ? statsOverride.totalRevenue
+    : rawStats
+      ? Number(rawStats.totalRevenue)
+      : 0;
+  const totalProfit = useOverride
+    ? statsOverride.totalProfit
+    : rawStats
+      ? Number(rawStats.totalProfit)
+      : 0;
+  const baseOrders = useOverride
+    ? statsOverride.baseOrders
+    : rawStats
+      ? Number(rawStats.baseOrders)
+      : 0;
+  const premiumOrders = useOverride
+    ? statsOverride.premiumOrders
+    : rawStats
+      ? Number(rawStats.premiumOrders)
+      : 0;
+  const eliteOrders = useOverride
+    ? statsOverride.eliteOrders
+    : rawStats
+      ? Number(rawStats.eliteOrders)
+      : 0;
+
+  const investmentUsed = Number(
+    localStorage.getItem("examkit_investment") ?? INVESTMENT_AMOUNT,
+  );
+  // Include budget planner income/expense in effective profit
+  const budgetEntries: Array<{ type: string; amount: number }> = JSON.parse(
+    localStorage.getItem("examkit_budget") ?? "[]",
+  );
+  const budgetIncome = budgetEntries
+    .filter((e) => e.type === "income")
+    .reduce((s, e) => s + e.amount, 0);
+  const budgetExpense = budgetEntries
+    .filter((e) => e.type === "expense")
+    .reduce((s, e) => s + e.amount, 0);
+  const effectiveProfit = totalProfit + budgetIncome - budgetExpense;
+  const breakEvenRemaining = Math.max(0, investmentUsed - effectiveProfit);
+  const breakEvenAchieved = effectiveProfit >= investmentUsed;
 
   const handleStatusUpdate = (orderId: string, newStatus: string) => {
     updateStatus(
       { orderId, newStatus },
       {
-        onSuccess: () => toast.success(`Order updated to ${newStatus}`),
-        onError: () => toast.error("Failed to update order status"),
+        onSuccess: () => toast.success(`Updated to ${newStatus}`),
+        onError: () => toast.error("Failed to update status"),
+      },
+    );
+  };
+
+  const handleAcceptOrder = (orderId: string) => {
+    updateStatus(
+      { orderId, newStatus: "Order Accepted" },
+      {
+        onSuccess: () => toast.success("Order accepted!"),
+        onError: () => toast.error("Failed to accept order"),
+      },
+    );
+  };
+
+  const handleDeclineConfirm = (orderId: string) => {
+    updateStatus(
+      { orderId, newStatus: "Declined" },
+      {
+        onSuccess: () => {
+          toast.success("Order declined");
+          setDeclineOrderId(null);
+        },
+        onError: () => toast.error("Failed to decline order"),
       },
     );
   };
@@ -1062,7 +1770,7 @@ export default function AdminPage({
       setShowEditPasswordModal(false);
       setEditMode(true);
       setEditPassword("");
-      toast.success("Edit mode enabled — changes apply site-wide");
+      toast.success("Edit mode enabled");
     } else {
       setEditPasswordError("Incorrect password");
     }
@@ -1071,7 +1779,7 @@ export default function AdminPage({
   const handleSaveEdit = () => {
     saveContent(editDraft);
     setEditMode(false);
-    toast.success("Changes saved — will reflect site-wide on next reload");
+    toast.success("Changes saved site-wide");
   };
 
   const handleCancelEdit = () => {
@@ -1080,7 +1788,46 @@ export default function AdminPage({
     toast.info("Edit cancelled");
   };
 
-  // STEP 1: Must be signed in as admin account
+  const handleInfoEditOpen = () => {
+    setOverrideDraft({ ...statsOverride });
+    setInfoPassword("");
+    setInfoPasswordError("");
+    setShowInfoEditModal(true);
+  };
+
+  const handleInfoPasswordSubmit = () => {
+    if (infoPassword === ADMIN_INFO_PASSWORD) {
+      setShowInfoEditModal(false);
+      setInfoEditUnlocked(true);
+      setInfoPassword("");
+      toast.success("Info edit mode enabled");
+    } else {
+      setInfoPasswordError("Incorrect password");
+    }
+  };
+
+  const handleSaveInfoOverride = () => {
+    const updated = { ...overrideDraft, enabled: true };
+    saveStatsOverride(updated);
+    setStatsOverrideState(updated);
+    setInfoEditUnlocked(false);
+    toast.success("Stats overridden");
+  };
+
+  const handleCancelInfoEdit = () => {
+    setOverrideDraft(statsOverride);
+    setInfoEditUnlocked(false);
+  };
+
+  const handleDisableOverride = () => {
+    const updated = { ...statsOverride, enabled: false };
+    saveStatsOverride(updated);
+    setStatsOverrideState(updated);
+    setInfoEditUnlocked(false);
+    toast.success("Using real stats again");
+  };
+
+  // ── Step 1: Must be signed in as admin account ──────────────────────────
   if (!isAuthAdmin) {
     return (
       <div
@@ -1099,11 +1846,8 @@ export default function AdminPage({
                 "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
               backdropFilter: "blur(24px)",
               WebkitBackdropFilter: "blur(24px)",
-              boxShadow:
-                "0 25px 50px -12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",
             }}
           >
-            <div className="absolute inset-0 -z-10 hero-gradient" />
             <div
               className="absolute inset-0 -z-10 opacity-60"
               style={{
@@ -1117,7 +1861,6 @@ export default function AdminPage({
                 style={{
                   background: "rgba(255,255,255,0.15)",
                   border: "1px solid rgba(255,255,255,0.25)",
-                  backdropFilter: "blur(8px)",
                 }}
               >
                 <Lock className="w-10 h-10 text-white" />
@@ -1148,7 +1891,7 @@ export default function AdminPage({
     );
   }
 
-  // STEP 2: Passcode gate
+  // ── Step 2: Passcode gate ───────────────────────────────────────────────
   if (!passcodeUnlocked) {
     return (
       <div
@@ -1167,8 +1910,6 @@ export default function AdminPage({
                 "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
               backdropFilter: "blur(24px)",
               WebkitBackdropFilter: "blur(24px)",
-              boxShadow:
-                "0 25px 50px -12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",
             }}
           >
             <div
@@ -1184,7 +1925,6 @@ export default function AdminPage({
                 style={{
                   background: "rgba(255,255,255,0.15)",
                   border: "1px solid rgba(255,255,255,0.25)",
-                  backdropFilter: "blur(8px)",
                 }}
               >
                 <Lock className="w-10 h-10 text-white" />
@@ -1258,7 +1998,6 @@ export default function AdminPage({
                     }}
                     data-ocid="admin.recovery_submit_button"
                   >
-                    <Lock className="w-4 h-4 mr-2" />
                     Recover Access
                   </Button>
                   <button
@@ -1281,23 +2020,18 @@ export default function AdminPage({
     );
   }
 
-  const totalOrders = stats ? Number(stats.totalOrders) : 0;
-  const totalRevenue = stats ? Number(stats.totalRevenue) : 0;
-  const totalProfit = stats ? Number(stats.totalProfit) : 0;
-  const earlyBirdUsed = stats ? Number(stats.earlyBirdUsed) : 0;
-  const baseOrders = stats ? Number(stats.baseOrders) : 0;
-  const premiumOrders = stats ? Number(stats.premiumOrders) : 0;
-  const eliteOrders = stats ? Number(stats.eliteOrders) : 0;
-  const breakEvenProgress = Math.min((totalOrders / 33) * 100, 100);
-
+  // ── Dashboard ───────────────────────────────────────────────────────────
   return (
     <>
       <div
-        className={`min-h-[calc(100vh-56px)] bg-background py-8 px-4 ${editMode ? "pb-24" : ""}`}
+        className={`min-h-[calc(100vh-56px)] bg-background py-8 px-4 ${
+          editMode ? "pb-24" : ""
+        }`}
       >
         <div className="max-w-7xl mx-auto">
+          {/* Header */}
           <motion.div
-            className="mb-8 flex items-start justify-between"
+            className="mb-8 flex items-start justify-between flex-wrap gap-3"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
@@ -1306,7 +2040,7 @@ export default function AdminPage({
                 Admin Dashboard
               </h1>
               <p className="text-muted-foreground font-body">
-                Business overview for Exam Success Kit
+                Exam Success Kit — Business Console
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -1315,7 +2049,7 @@ export default function AdminPage({
                   onClick={handleEditButtonClick}
                   variant="outline"
                   size="sm"
-                  className="font-sans-display text-sm border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300"
+                  className="font-sans-display text-sm border-blue-200 text-blue-600 hover:bg-blue-50"
                   data-ocid="admin.edit_button"
                 >
                   <Edit2 className="w-3.5 h-3.5 mr-1.5" />
@@ -1327,112 +2061,195 @@ export default function AdminPage({
                 onClick={handleLogout}
                 variant="outline"
                 size="sm"
-                className="font-sans-display text-sm border-border hover:bg-muted"
+                className="font-sans-display text-sm"
                 data-ocid="admin.logout_button"
               >
                 <LogOut className="w-3.5 h-3.5 mr-1.5" />
                 Logout
               </Button>
             </div>
+          </motion.div>
 
-            {/* Edit Password Modal */}
-            {showEditPasswordModal && (
-              <div
-                className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          {/* Edit password modal */}
+          {showEditPasswordModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center px-4"
+              style={{
+                background: "rgba(0,0,0,0.5)",
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              <motion.div
+                className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl w-full max-w-sm"
                 style={{
-                  background: "rgba(0,0,0,0.5)",
-                  backdropFilter: "blur(4px)",
+                  background:
+                    "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
+                  backdropFilter: "blur(24px)",
+                  WebkitBackdropFilter: "blur(24px)",
                 }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                data-ocid="admin.edit_password_modal"
               >
-                <motion.div
-                  className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl w-full max-w-sm"
+                <div
+                  className="absolute inset-0 -z-10 opacity-80"
                   style={{
                     background:
-                      "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
-                    backdropFilter: "blur(24px)",
-                    WebkitBackdropFilter: "blur(24px)",
-                    boxShadow:
-                      "0 25px 50px -12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)",
+                      "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
                   }}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  data-ocid="admin.edit_password_modal"
-                >
-                  <div
-                    className="absolute inset-0 -z-10 opacity-80"
-                    style={{
-                      background:
-                        "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
-                    }}
-                  />
-                  <div className="relative p-8">
-                    <div
-                      className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
-                      style={{
-                        background: "rgba(255,255,255,0.15)",
-                        border: "1px solid rgba(255,255,255,0.25)",
+                />
+                <div className="relative p-8">
+                  <h2 className="font-display text-2xl font-bold text-white mb-1 text-center">
+                    Edit Site Content
+                  </h2>
+                  <p className="text-white/60 font-body text-sm mb-6 text-center">
+                    Enter the edit password to modify site content.
+                  </p>
+                  <div className="space-y-3">
+                    <Input
+                      type="password"
+                      value={editPassword}
+                      onChange={(e) => {
+                        setEditPassword(e.target.value);
+                        setEditPasswordError("");
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleEditPasswordSubmit();
+                      }}
+                      placeholder="Edit password..."
+                      className="bg-white/10 border-white/25 text-white placeholder:text-white/35 text-center text-lg tracking-widest"
+                      data-ocid="admin.edit_password_input"
+                    />
+                    {editPasswordError && (
+                      <p className="text-red-400 text-sm font-body text-center">
+                        {editPasswordError}
+                      </p>
+                    )}
+                    <Button
+                      onClick={handleEditPasswordSubmit}
+                      disabled={!editPassword.trim()}
+                      className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
+                      style={{
+                        background: "oklch(0.78 0.12 72)",
+                        color: "oklch(0.19 0.035 155)",
+                        border: "none",
+                      }}
+                      data-ocid="admin.edit_password_submit_button"
                     >
-                      <Edit2 className="w-8 h-8 text-white" />
-                    </div>
-                    <h2 className="font-display text-2xl font-bold text-white mb-1 text-center">
-                      Edit Mode
-                    </h2>
-                    <p className="text-white/60 font-body text-sm mb-6 text-center">
-                      Enter the edit password to make changes to site content.
-                    </p>
-                    <div className="space-y-3">
-                      <Input
-                        type="password"
-                        value={editPassword}
-                        onChange={(e) => {
-                          setEditPassword(e.target.value);
-                          setEditPasswordError("");
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleEditPasswordSubmit();
-                        }}
-                        placeholder="Edit password..."
-                        className="bg-white/10 border-white/25 text-white placeholder:text-white/35 focus-visible:ring-white/30 text-center text-lg tracking-widest"
-                        data-ocid="admin.edit_password_input"
-                      />
-                      {editPasswordError && (
-                        <p className="text-red-400 text-sm font-body text-center">
-                          {editPasswordError}
-                        </p>
-                      )}
-                      <Button
-                        onClick={handleEditPasswordSubmit}
-                        disabled={!editPassword.trim()}
-                        className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
-                        style={{
-                          background: "oklch(0.78 0.12 72)",
-                          color: "oklch(0.19 0.035 155)",
-                          border: "none",
-                        }}
-                        data-ocid="admin.edit_password_submit_button"
-                      >
-                        <Edit2 className="w-4 h-4 mr-2" />
-                        Enable Edit Mode
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowEditPasswordModal(false);
-                          setEditPassword("");
-                          setEditPasswordError("");
-                        }}
-                        className="w-full text-sm text-white/50 hover:text-white/80 transition-colors font-body pt-1"
-                        data-ocid="admin.edit_password_cancel_button"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                      Enable Edit Mode
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEditPasswordModal(false);
+                        setEditPassword("");
+                        setEditPasswordError("");
+                      }}
+                      className="w-full text-sm text-white/50 hover:text-white/80 transition-colors font-body pt-1"
+                      data-ocid="admin.edit_password_cancel_button"
+                    >
+                      Cancel
+                    </button>
                   </div>
-                </motion.div>
-              </div>
-            )}
-          </motion.div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Info edit password modal */}
+          {showInfoEditModal && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center px-4"
+              style={{
+                background: "rgba(0,0,0,0.5)",
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              <motion.div
+                className="relative rounded-3xl overflow-hidden border border-white/20 shadow-2xl w-full max-w-sm"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 100%)",
+                  backdropFilter: "blur(24px)",
+                  WebkitBackdropFilter: "blur(24px)",
+                }}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                data-ocid="admin.info_edit_modal"
+              >
+                <div
+                  className="absolute inset-0 -z-10 opacity-80"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, oklch(0.19 0.035 155) 0%, oklch(0.26 0.06 155) 100%)",
+                  }}
+                />
+                <div className="relative p-8">
+                  <h2 className="font-display text-2xl font-bold text-white mb-1 text-center">
+                    Edit Stats
+                  </h2>
+                  <p className="text-white/60 font-body text-sm mb-6 text-center">
+                    Enter info edit password.
+                  </p>
+                  <div className="space-y-3">
+                    <Input
+                      type="password"
+                      value={infoPassword}
+                      onChange={(e) => {
+                        setInfoPassword(e.target.value);
+                        setInfoPasswordError("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleInfoPasswordSubmit();
+                      }}
+                      placeholder="Info edit password..."
+                      className="bg-white/10 border-white/25 text-white placeholder:text-white/35 text-center text-lg tracking-widest"
+                      data-ocid="admin.info_password_input"
+                    />
+                    {infoPasswordError && (
+                      <p className="text-red-400 text-sm font-body text-center">
+                        {infoPasswordError}
+                      </p>
+                    )}
+                    <Button
+                      onClick={handleInfoPasswordSubmit}
+                      disabled={!infoPassword.trim()}
+                      className="w-full font-sans-display font-bold py-3 text-base rounded-xl"
+                      style={{
+                        background: "oklch(0.78 0.12 72)",
+                        color: "oklch(0.19 0.035 155)",
+                        border: "none",
+                      }}
+                      data-ocid="admin.info_password_submit_button"
+                    >
+                      Unlock Stats Edit
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowInfoEditModal(false);
+                        setInfoPassword("");
+                        setInfoPasswordError("");
+                      }}
+                      className="w-full text-sm text-white/50 hover:text-white/80 transition-colors font-body pt-1"
+                      data-ocid="admin.info_password_cancel_button"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Decline modal */}
+          {declineOrderId && (
+            <DeclineOverrideModal
+              orderId={declineOrderId}
+              onConfirm={() => handleDeclineConfirm(declineOrderId)}
+              onClose={() => setDeclineOrderId(null)}
+            />
+          )}
 
           {/* Stats Cards */}
           <motion.div
@@ -1501,12 +2318,13 @@ export default function AdminPage({
                     </div>
                   </CardHeader>
                   <CardContent className="px-5 pb-5">
-                    <div className="font-display text-3xl font-bold text-forest">
+                    <div className="font-display text-3xl font-bold text-foreground">
                       ₹{totalProfit.toLocaleString("en-IN")}
                     </div>
                   </CardContent>
                 </Card>
 
+                {/* Break-even card — cash countdown */}
                 <Card
                   className="glass-light glass-hover rounded-2xl"
                   data-ocid="admin.stats_card.4"
@@ -1516,44 +2334,58 @@ export default function AdminPage({
                       <CardTitle className="text-sm font-sans-display text-muted-foreground">
                         Break-Even
                       </CardTitle>
-                      <Target className="w-4 h-4 text-coral" />
+                      <Target className="w-4 h-4 text-forest" />
                     </div>
                   </CardHeader>
                   <CardContent className="px-5 pb-5">
-                    <div className="font-display text-3xl font-bold text-foreground">
-                      {totalOrders}
-                      <span className="text-muted-foreground font-sans-display font-normal text-lg">
-                        /33
-                      </span>
-                    </div>
-                    <Progress value={breakEvenProgress} className="mt-2 h-2" />
-                    <div className="text-xs text-muted-foreground font-body mt-1.5">
-                      {breakEvenProgress >= 100
-                        ? "✓ Reached!"
-                        : `${Math.max(0, 33 - totalOrders)} to go`}
-                    </div>
+                    {breakEvenAchieved ? (
+                      <div>
+                        <div className="font-display text-lg font-bold text-green-600">
+                          ✅ Achieved!
+                        </div>
+                        <div className="text-xs text-green-600 font-body mt-1">
+                          ₹
+                          {(effectiveProfit - investmentUsed).toLocaleString(
+                            "en-IN",
+                          )}{" "}
+                          above target
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="font-display text-2xl font-bold text-foreground">
+                          ₹{breakEvenRemaining.toLocaleString("en-IN")}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-body mt-1">
+                          more profit needed
+                        </div>
+                        <Progress
+                          value={Math.min(
+                            (effectiveProfit / investmentUsed) * 100,
+                            100,
+                          )}
+                          className="mt-2 h-1.5"
+                        />
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
                 <Card
-                  className={`glass-light glass-hover rounded-2xl ${pendingCancelRequests > 0 ? "ring-2 ring-amber-300" : ""}`}
+                  className="glass-light glass-hover rounded-2xl"
                   data-ocid="admin.stats_card.5"
                 >
                   <CardHeader className="pb-2 pt-5 px-5">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-sans-display text-muted-foreground">
-                        Cancel Reqs
+                        Cancel Requests
                       </CardTitle>
-                      <AlertTriangle
-                        className={`w-4 h-4 ${pendingCancelRequests > 0 ? "text-amber-500" : "text-muted-foreground"}`}
-                      />
+                      <Inbox className="w-4 h-4 text-forest" />
                     </div>
                   </CardHeader>
                   <CardContent className="px-5 pb-5">
-                    <div
-                      className={`font-display text-3xl font-bold ${pendingCancelRequests > 0 ? "text-amber-600" : "text-foreground"}`}
-                    >
-                      {pendingCancelRequests}
+                    <div className="font-display text-3xl font-bold text-foreground">
+                      {rawStats ? Number(rawStats.pendingCancelRequests) : 0}
                     </div>
                     <div className="text-xs text-muted-foreground font-body mt-1">
                       Pending review
@@ -1564,720 +2396,663 @@ export default function AdminPage({
             )}
           </motion.div>
 
-          {/* Edit Mode Panel */}
-          {editMode && (
+          {/* Info Edit controls */}
+          {infoEditUnlocked ? (
             <motion.div
-              className="mb-8 glass-light rounded-2xl overflow-hidden"
-              style={{ border: "1.5px solid oklch(0.62 0.18 200 / 0.4)" }}
-              initial={{ opacity: 0, y: -10 }}
+              className="glass-light rounded-2xl p-5 mb-6"
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              data-ocid="admin.edit_panel"
+              data-ocid="admin.info_edit_panel"
             >
-              <div
-                className="px-6 py-4 border-b border-border/40 flex items-center gap-3"
-                style={{ background: "oklch(0.62 0.18 200 / 0.07)" }}
-              >
-                <Edit2 className="w-4 h-4 text-blue-600" />
+              <div className="flex items-center justify-between mb-4">
                 <h3 className="font-sans-display font-bold text-foreground">
-                  Edit Site Content
+                  Edit Stats Override
                 </h3>
-                <span className="text-xs text-blue-600 font-body bg-blue-50 px-2 py-0.5 rounded-full">
-                  Edit Mode Active
-                </span>
+                <div className="flex items-center gap-2">
+                  {statsOverride.enabled && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleDisableOverride}
+                      className="text-xs border-yellow-200 text-yellow-700 hover:bg-yellow-50"
+                    >
+                      Use Real Stats
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={handleSaveInfoOverride}
+                    className="text-xs bg-forest text-white"
+                    data-ocid="admin.info_save_button"
+                  >
+                    <Save className="w-3 h-3 mr-1" />
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCancelInfoEdit}
+                    data-ocid="admin.info_cancel_button"
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
-              <p className="px-6 pt-4 pb-0 text-xs text-muted-foreground font-body">
-                Edit site text — hero, footer info, early bird badge, and nudge
-                copy. Only text can be changed; prices and layout are not
-                affected.
-              </p>
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
-                {[
-                  { key: "heroTitle", label: "Hero Heading" },
-                  { key: "heroSubtitle", label: "Hero Subtext" },
-                  { key: "earlyBirdText", label: "Early Bird Badge" },
-                  { key: "upgradeNudge", label: "Upgrade Nudge Text" },
-                  { key: "footerPhone", label: "WhatsApp / Contact Number" },
-                  { key: "footerShipping", label: "Shipping Info Text" },
-                ].map(({ key, label }) => (
-                  <div key={key} className="space-y-1.5">
-                    {(editDraft as unknown as Record<string, string>)[key]
-                      .length > 60 ? (
-                      <label className="block space-y-1.5">
-                        <span className="text-xs font-sans-display font-semibold text-muted-foreground uppercase tracking-wide">
-                          {label}
-                        </span>
-                        <textarea
-                          value={
-                            (editDraft as unknown as Record<string, string>)[
-                              key
-                            ]
-                          }
-                          onChange={(e) =>
-                            setEditDraft({
-                              ...editDraft,
-                              [key]: e.target.value,
-                            })
-                          }
-                          className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm font-body focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
-                          rows={3}
-                          data-ocid={`admin.edit_field_${key}`}
-                        />
-                      </label>
-                    ) : (
-                      <label className="block space-y-1.5">
-                        <span className="text-xs font-sans-display font-semibold text-muted-foreground uppercase tracking-wide">
-                          {label}
-                        </span>
-                        <input
-                          type="text"
-                          value={
-                            (editDraft as unknown as Record<string, string>)[
-                              key
-                            ]
-                          }
-                          onChange={(e) =>
-                            setEditDraft({
-                              ...editDraft,
-                              [key]: e.target.value,
-                            })
-                          }
-                          className="w-full px-3 py-2 rounded-xl border border-border bg-background text-foreground text-sm font-body focus:outline-none focus:ring-2 focus:ring-blue-400"
-                          data-ocid={`admin.edit_field_${key}`}
-                        />
-                      </label>
-                    )}
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+                {(
+                  [
+                    ["totalOrders", "Total Orders"],
+                    ["totalRevenue", "Revenue (₹)"],
+                    ["totalProfit", "Profit (₹)"],
+                    ["baseOrders", "Base Orders"],
+                    ["premiumOrders", "Premium Orders"],
+                    ["eliteOrders", "Elite Orders"],
+                  ] as [keyof StatsOverride, string][]
+                ).map(([key, label]) => (
+                  <div key={key}>
+                    <Label className="text-xs font-body text-muted-foreground mb-1 block">
+                      {label}
+                    </Label>
+                    <Input
+                      type="number"
+                      value={(overrideDraft[key] as number) ?? 0}
+                      onChange={(e) =>
+                        setOverrideDraft((prev) => ({
+                          ...prev,
+                          [key]: Number(e.target.value),
+                        }))
+                      }
+                      className="h-8 text-sm bg-white/70"
+                      data-ocid={`admin.info_${key}_input`}
+                    />
                   </div>
                 ))}
               </div>
             </motion.div>
+          ) : (
+            <div className="flex justify-end mb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleInfoEditOpen}
+                className="text-xs font-sans-display border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                data-ocid="admin.info_edit_button"
+              >
+                <Lock className="w-3 h-3 mr-1.5" />
+                Edit Stats (RDS@INFO)
+              </Button>
+            </div>
           )}
 
-          {/* Edition + Early Bird badges */}
-          <motion.div
-            className="flex flex-wrap gap-3 mb-8"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-          >
-            <div className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-sans-display text-muted-foreground">
-                Base:
-              </span>
-              <span className="font-sans-display font-bold text-foreground">
-                {baseOrders} sold
-              </span>
-            </div>
-            <div
-              className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2"
-              style={{ border: "1px solid oklch(0.62 0.18 30 / 0.3)" }}
-            >
-              <BarChart3 className="w-4 h-4 text-coral" />
-              <span className="text-sm font-sans-display text-coral">
-                Premium:
-              </span>
-              <span className="font-sans-display font-bold text-coral">
-                {premiumOrders} sold
-              </span>
-            </div>
-            <div
-              className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2"
-              style={{ border: "1px solid rgba(217,119,6,0.3)" }}
-            >
-              <Crown className="w-4 h-4 text-amber-600" />
-              <span className="text-sm font-sans-display text-amber-700">
-                Elite:
-              </span>
-              <span className="font-sans-display font-bold text-amber-800">
-                {eliteOrders} sold
-              </span>
-            </div>
-            <div
-              className="glass-light rounded-xl px-4 py-2.5 flex items-center gap-2"
-              style={{ border: "1px solid oklch(0.78 0.12 72 / 0.4)" }}
-            >
-              <Star className="w-4 h-4 text-yellow-700" />
-              <span className="text-sm font-sans-display text-yellow-800">
-                Early Bird:
-              </span>
-              <span className="font-sans-display font-bold text-yellow-900">
-                {earlyBirdUsed}/20
-              </span>
-            </div>
-          </motion.div>
-
-          {/* Main Content Tabs */}
+          {/* Main Tabs */}
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.25 }}
+            transition={{ delay: 0.2 }}
           >
             <Tabs defaultValue="orders">
               <TabsList
-                className="flex flex-wrap h-auto gap-1 glass-light p-1 rounded-xl mb-6"
-                data-ocid="admin.main_tab_list"
+                className="flex flex-wrap gap-1 h-auto bg-muted/50 rounded-xl p-1 mb-6"
+                data-ocid="admin.main_tabs"
               >
                 <TabsTrigger
                   value="orders"
-                  className="text-xs rounded-lg"
+                  className="rounded-lg font-sans-display text-sm"
                   data-ocid="admin.orders_tab"
                 >
-                  Orders
-                  {orders && orders.length > 0 && (
-                    <span className="ml-1.5 bg-forest/20 text-forest text-[10px] px-1.5 py-0.5 rounded-full font-sans-display font-bold">
-                      {orders.length}
-                    </span>
-                  )}
+                  <Package className="w-3.5 h-3.5 mr-1.5" />
+                  Orders ({filteredOrders.length})
                 </TabsTrigger>
                 <TabsTrigger
                   value="requests"
-                  className="text-xs rounded-lg"
+                  className="rounded-lg font-sans-display text-sm"
                   data-ocid="admin.requests_tab"
                 >
+                  <Inbox className="w-3.5 h-3.5 mr-1.5" />
                   Requests
-                  {pendingCancelRequests > 0 && (
-                    <span className="ml-1.5 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-sans-display font-bold">
-                      {pendingCancelRequests}
-                    </span>
-                  )}
+                  {cancelRequests &&
+                    cancelRequests.filter((r) => r.status === "Pending")
+                      .length > 0 && (
+                      <span className="ml-1.5 bg-red-500 text-white text-[10px] rounded-full px-1.5 py-0.5">
+                        {
+                          cancelRequests.filter((r) => r.status === "Pending")
+                            .length
+                        }
+                      </span>
+                    )}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="todos"
+                  className="rounded-lg font-sans-display text-sm"
+                  data-ocid="admin.todos_tab"
+                >
+                  <ListTodo className="w-3.5 h-3.5 mr-1.5" />
+                  To-Do
+                </TabsTrigger>
+                <TabsTrigger
+                  value="budget"
+                  className="rounded-lg font-sans-display text-sm"
+                  data-ocid="admin.budget_tab"
+                >
+                  <Wallet className="w-3.5 h-3.5 mr-1.5" />
+                  Budget
+                </TabsTrigger>
+                <TabsTrigger
+                  value="notes"
+                  className="rounded-lg font-sans-display text-sm"
+                  data-ocid="admin.notes_tab"
+                >
+                  <StickyNote className="w-3.5 h-3.5 mr-1.5" />
+                  Notes
                 </TabsTrigger>
                 <TabsTrigger
                   value="toolkit"
-                  className="text-xs rounded-lg"
+                  className="rounded-lg font-sans-display text-sm"
                   data-ocid="admin.toolkit_tab"
                 >
+                  <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
                   Toolkit
                 </TabsTrigger>
               </TabsList>
 
               {/* Orders Tab */}
-              <TabsContent value="orders">
-                <div
-                  className="glass-light rounded-2xl overflow-hidden"
-                  data-ocid="admin.orders_table"
-                >
-                  {/* Search bar */}
-                  <div className="p-4 border-b border-border/30">
-                    <div className="relative max-w-sm">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        value={orderSearchId}
-                        onChange={(e) => setOrderSearchId(e.target.value)}
-                        placeholder="Search by Order ID (e.g. ORD-1)"
-                        className="pl-9 h-9 text-sm font-mono"
-                        data-ocid="admin.order_search_input"
-                      />
-                    </div>
+              <TabsContent value="orders" className="space-y-4">
+                {/* Search bar */}
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      value={orderSearchId}
+                      onChange={(e) => setOrderSearchId(e.target.value)}
+                      placeholder="Search by Order ID..."
+                      className="pl-9 bg-white/70"
+                      data-ocid="admin.order_search_input"
+                    />
                   </div>
-
-                  {isLoadingOrders ? (
-                    <div className="p-6 space-y-3">
-                      {Array.from({ length: 4 }).map((_, idx) => (
-                        <Skeleton
-                          key={idx.toString()}
-                          className="h-12 rounded-lg"
-                        />
-                      ))}
-                    </div>
-                  ) : !orders || orders.length === 0 ? (
-                    <div
-                      className="text-center py-16"
-                      data-ocid="admin.orders_empty_state"
+                  {orderSearchId && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setOrderSearchId("")}
+                      data-ocid="admin.clear_search_button"
                     >
-                      <ShoppingBag className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                      <p className="font-sans-display font-semibold text-foreground">
-                        No orders yet
-                      </p>
-                      <p className="text-muted-foreground text-sm font-body mt-1">
-                        Orders will appear here once placed
-                      </p>
-                    </div>
-                  ) : filteredOrders.length === 0 ? (
-                    <div
-                      className="text-center py-16"
-                      data-ocid="admin.orders_search_empty_state"
-                    >
-                      <Search className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                      <p className="font-sans-display font-semibold text-foreground">
-                        No orders match "{orderSearchId}"
-                      </p>
-                      <p className="text-muted-foreground text-sm font-body mt-1">
-                        Try a different Order ID
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead className="font-sans-display text-xs">
-                              Order ID
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Customer
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Phone
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Edition
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Price
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Status
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Date
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Actions
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredOrders.map((order, idx) => (
-                            <OrderRow
-                              key={order.id}
-                              order={order}
-                              index={idx}
-                              onStatusUpdate={handleStatusUpdate}
-                            />
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                      <X className="w-4 h-4" />
+                    </Button>
                   )}
                 </div>
+
+                {/* Status sub-tabs */}
+                <Tabs defaultValue="pending">
+                  <TabsList
+                    className="flex flex-wrap gap-1 h-auto bg-muted/30 rounded-xl p-1"
+                    data-ocid="admin.order_status_tabs"
+                  >
+                    {(
+                      [
+                        ["toWorkOn", "To Work On", ordersByTab.toWorkOn.length],
+                        ["pending", "Pending", ordersByTab.pending.length],
+                        ["accepted", "Accepted", ordersByTab.accepted.length],
+                        [
+                          "processing",
+                          "Processing",
+                          ordersByTab.processing.length,
+                        ],
+                        [
+                          "dispatched",
+                          "Dispatched",
+                          ordersByTab.dispatched.length,
+                        ],
+                        [
+                          "delivered",
+                          "Delivered",
+                          ordersByTab.delivered.length,
+                        ],
+                        ["declined", "Declined", ordersByTab.declined.length],
+                        [
+                          "cancelled",
+                          "Cancelled",
+                          ordersByTab.cancelled.length,
+                        ],
+                      ] as [string, string, number][]
+                    ).map(([val, label, count]) => (
+                      <TabsTrigger
+                        key={val}
+                        value={val}
+                        className="rounded-lg font-sans-display text-xs"
+                        data-ocid={`admin.order_${val}_tab`}
+                      >
+                        {label}
+                        {count > 0 && (
+                          <span
+                            className={`ml-1 text-[10px] rounded-full px-1.5 py-0.5 ${
+                              val === "toWorkOn"
+                                ? "bg-amber-500 text-white"
+                                : val === "pending"
+                                  ? "bg-yellow-500 text-white"
+                                  : val === "declined" || val === "cancelled"
+                                    ? "bg-red-500 text-white"
+                                    : "bg-forest text-white"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+
+                  {Object.entries(ordersByTab).map(([tabKey, tabOrders]) => (
+                    <TabsContent key={tabKey} value={tabKey}>
+                      {isLoadingOrders ? (
+                        <div
+                          className="space-y-2"
+                          data-ocid="admin.orders_loading_state"
+                        >
+                          {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-14 rounded-xl" />
+                          ))}
+                        </div>
+                      ) : tabOrders.length === 0 ? (
+                        <div
+                          className="text-center py-12 glass-light rounded-2xl"
+                          data-ocid="admin.orders_empty_state"
+                        >
+                          <Package className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                          <p className="font-sans-display text-muted-foreground text-sm">
+                            No orders in this category
+                          </p>
+                        </div>
+                      ) : (
+                        <div
+                          className="glass-light rounded-2xl overflow-hidden"
+                          data-ocid="admin.orders_table"
+                        >
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="font-sans-display text-xs">
+                                  Order ID
+                                </TableHead>
+                                <TableHead className="font-sans-display text-xs">
+                                  Customer
+                                </TableHead>
+                                <TableHead className="font-sans-display text-xs">
+                                  Edition
+                                </TableHead>
+                                <TableHead className="font-sans-display text-xs">
+                                  Due Date
+                                </TableHead>
+                                <TableHead className="font-sans-display text-xs">
+                                  Status
+                                </TableHead>
+                                <TableHead className="font-sans-display text-xs">
+                                  Update
+                                </TableHead>
+                                <TableHead className="font-sans-display text-xs">
+                                  Actions
+                                </TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {tabOrders.map((order, idx) => (
+                                <OrderRow
+                                  key={order.id}
+                                  order={order}
+                                  index={idx}
+                                  onStatusChange={handleStatusUpdate}
+                                  onDecline={setDeclineOrderId}
+                                  onAccept={handleAcceptOrder}
+                                />
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </TabsContent>
+                  ))}
+                </Tabs>
               </TabsContent>
 
-              {/* Cancel Requests Tab */}
+              {/* Cancel/Refund Requests */}
               <TabsContent value="requests">
-                <div className="mb-4">
-                  <h2 className="font-sans-display font-bold text-xl text-foreground">
-                    Cancel & Refund Requests
-                  </h2>
-                  <p className="text-muted-foreground font-body text-sm mt-0.5">
-                    Review and action customer cancellation and refund requests
-                  </p>
-                </div>
-                <CancelRequestsPanel />
+                {!cancelRequests || cancelRequests.length === 0 ? (
+                  <div
+                    className="text-center py-16 glass-light rounded-2xl"
+                    data-ocid="admin.requests_empty_state"
+                  >
+                    <Inbox className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="font-sans-display font-semibold text-foreground">
+                      No cancel requests
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-muted-foreground text-sm font-body">
+                      {
+                        cancelRequests.filter((r) => r.status === "Pending")
+                          .length
+                      }{" "}
+                      pending review
+                    </p>
+                    {cancelRequests.map((req, idx) => (
+                      <RequestCard
+                        key={req.id}
+                        req={req}
+                        index={idx}
+                        onAccept={() =>
+                          updateCancelRequest(
+                            { requestId: req.id, newStatus: "Accepted" },
+                            {
+                              onSuccess: () =>
+                                toast.success("Request accepted"),
+                              onError: () => toast.error("Failed to accept"),
+                            },
+                          )
+                        }
+                        onDecline={() =>
+                          updateCancelRequest(
+                            { requestId: req.id, newStatus: "Declined" },
+                            {
+                              onSuccess: () =>
+                                toast.success("Request declined"),
+                              onError: () => toast.error("Failed to decline"),
+                            },
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
               </TabsContent>
 
-              {/* Business Toolkit Tab */}
+              {/* To-Do Tab */}
+              <TabsContent value="todos">
+                <TodoListTab orders={orders ?? []} />
+              </TabsContent>
+
+              {/* Budget Tab */}
+              <TabsContent value="budget">
+                <BudgetPlannerTab />
+              </TabsContent>
+
+              {/* Notes Tab */}
+              <TabsContent value="notes">
+                <AdminNotesTab />
+              </TabsContent>
+
+              {/* Toolkit Tab */}
               <TabsContent value="toolkit">
                 <Tabs defaultValue="cost">
-                  <TabsList
-                    className="flex flex-wrap h-auto gap-1 glass-light p-1 rounded-xl mb-6"
-                    data-ocid="admin.toolkit.tab"
-                  >
+                  <TabsList className="bg-muted/40 rounded-xl mb-6">
                     <TabsTrigger
                       value="cost"
-                      className="text-xs rounded-lg"
-                      data-ocid="admin.toolkit_cost.tab"
+                      className="font-sans-display text-sm"
                     >
                       Cost Structure
                     </TabsTrigger>
                     <TabsTrigger
                       value="plan"
-                      className="text-xs rounded-lg"
-                      data-ocid="admin.toolkit_plan.tab"
+                      className="font-sans-display text-sm"
                     >
                       90-Day Plan
                     </TabsTrigger>
                     <TabsTrigger
                       value="scale"
-                      className="text-xs rounded-lg"
-                      data-ocid="admin.toolkit_scale.tab"
+                      className="font-sans-display text-sm"
                     >
-                      Scaling Roadmap
+                      Scale Roadmap
                     </TabsTrigger>
                     <TabsTrigger
-                      value="content"
-                      className="text-xs rounded-lg"
-                      data-ocid="admin.toolkit_content.tab"
+                      value="edit"
+                      className="font-sans-display text-sm"
                     >
-                      Content Calendar
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="market"
-                      className="text-xs rounded-lg"
-                      data-ocid="admin.toolkit_market.tab"
-                    >
-                      Market Research
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="ambassador"
-                      className="text-xs rounded-lg"
-                      data-ocid="admin.toolkit_ambassador.tab"
-                    >
-                      Ambassador
+                      Site Content
                     </TabsTrigger>
                   </TabsList>
 
-                  {/* Cost Structure */}
                   <TabsContent value="cost">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {/* Base */}
-                      <div
-                        className="glass-light rounded-2xl overflow-hidden"
-                        style={{ border: "1px solid rgba(180,155,100,0.3)" }}
-                      >
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {[
+                        {
+                          label: "Base ₹449",
+                          costs: baseCosts,
+                          profit:
+                            499 - baseCosts.reduce((s, c) => s + c.cost, 0),
+                          color: "oklch(0.34 0.095 155)",
+                        },
+                        {
+                          label: "Premium ₹549",
+                          costs: premiumCosts,
+                          profit:
+                            599 - premiumCosts.reduce((s, c) => s + c.cost, 0),
+                          color: "oklch(0.62 0.18 30)",
+                        },
+                        {
+                          label: "Elite ₹850",
+                          costs: eliteCosts,
+                          profit:
+                            850 - eliteCosts.reduce((s, c) => s + c.cost, 0),
+                          color: "oklch(0.62 0.18 55)",
+                        },
+                      ].map(({ label, costs, profit, color }) => (
                         <div
-                          className="px-5 py-4 border-b border-border/40"
-                          style={{
-                            background: "oklch(0.82 0.07 60 / 0.12)",
-                          }}
+                          key={label}
+                          className="glass-light rounded-2xl p-5"
                         >
-                          <h3 className="font-sans-display font-bold text-foreground">
-                            Base Eco — ₹499
-                          </h3>
-                        </div>
-                        <Table>
-                          <TableBody>
-                            {baseCosts.map((row) => (
-                              <TableRow key={row.component}>
-                                <TableCell className="text-sm font-body">
-                                  {row.component}
-                                </TableCell>
-                                <TableCell className="text-sm font-sans-display text-right">
-                                  ₹{row.cost}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                            <TableRow className="bg-muted/50">
-                              <TableCell className="font-sans-display font-bold">
-                                Total Cost
-                              </TableCell>
-                              <TableCell className="font-sans-display font-bold text-right">
-                                ₹{baseCosts.reduce((s, r) => s + r.cost, 0)}
-                              </TableCell>
-                            </TableRow>
-                            <TableRow className="bg-forest/5">
-                              <TableCell className="font-sans-display font-bold text-forest">
-                                Profit/Unit
-                              </TableCell>
-                              <TableCell className="font-sans-display font-bold text-forest text-right">
-                                ₹
-                                {499 -
-                                  baseCosts.reduce((s, r) => s + r.cost, 0)}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </div>
-
-                      {/* Premium */}
-                      <div
-                        className="glass-light rounded-2xl overflow-hidden"
-                        style={{
-                          border: "1px solid oklch(0.62 0.18 30 / 0.3)",
-                        }}
-                      >
-                        <div
-                          className="px-5 py-4 border-b"
-                          style={{
-                            background: "oklch(0.62 0.18 30 / 0.07)",
-                            borderColor: "oklch(0.62 0.18 30 / 0.18)",
-                          }}
-                        >
-                          <h3 className="font-sans-display font-bold text-foreground">
-                            Premium Color — ₹599
-                          </h3>
-                        </div>
-                        <Table>
-                          <TableBody>
-                            {premiumCosts.map((row) => (
-                              <TableRow key={row.component}>
-                                <TableCell className="text-sm font-body">
-                                  {row.component}
-                                </TableCell>
-                                <TableCell className="text-sm font-sans-display text-right">
-                                  ₹{row.cost}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                            <TableRow className="bg-muted/50">
-                              <TableCell className="font-sans-display font-bold">
-                                Total Cost
-                              </TableCell>
-                              <TableCell className="font-sans-display font-bold text-right">
-                                ₹{premiumCosts.reduce((s, r) => s + r.cost, 0)}
-                              </TableCell>
-                            </TableRow>
-                            <TableRow className="bg-forest/5">
-                              <TableCell className="font-sans-display font-bold text-forest">
-                                Profit/Unit
-                              </TableCell>
-                              <TableCell className="font-sans-display font-bold text-forest text-right">
-                                ₹
-                                {599 -
-                                  premiumCosts.reduce((s, r) => s + r.cost, 0)}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </div>
-
-                      {/* Elite */}
-                      <div
-                        className="glass-light rounded-2xl overflow-hidden"
-                        style={{ border: "1px solid rgba(217,119,6,0.3)" }}
-                      >
-                        <div
-                          className="px-5 py-4 border-b flex items-center gap-2"
-                          style={{
-                            background: "oklch(0.78 0.12 72 / 0.08)",
-                            borderColor: "rgba(217,119,6,0.2)",
-                          }}
-                        >
-                          <Crown className="w-4 h-4 text-amber-600" />
-                          <h3 className="font-sans-display font-bold text-foreground">
-                            Elite Custom — ₹799
-                          </h3>
-                        </div>
-                        <Table>
-                          <TableBody>
-                            {eliteCosts.map((row) => (
-                              <TableRow key={row.component}>
-                                <TableCell className="text-sm font-body">
-                                  {row.component}
-                                </TableCell>
-                                <TableCell className="text-sm font-sans-display text-right">
-                                  ₹{row.cost}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                            <TableRow className="bg-muted/50">
-                              <TableCell className="font-sans-display font-bold">
-                                Total Cost
-                              </TableCell>
-                              <TableCell className="font-sans-display font-bold text-right">
-                                ₹{eliteCosts.reduce((s, r) => s + r.cost, 0)}
-                              </TableCell>
-                            </TableRow>
-                            <TableRow className="bg-forest/5">
-                              <TableCell className="font-sans-display font-bold text-forest">
-                                Profit/Unit
-                              </TableCell>
-                              <TableCell className="font-sans-display font-bold text-forest text-right">
-                                ₹
-                                {799 -
-                                  eliteCosts.reduce((s, r) => s + r.cost, 0)}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                  {/* 90-Day Plan */}
-                  <TabsContent value="plan">
-                    <div className="space-y-6">
-                      {ninetyDayPlan.map((month) => (
-                        <div
-                          key={month.month}
-                          className="glass-light rounded-2xl overflow-hidden"
-                        >
-                          <div
-                            className="px-5 py-3 border-b border-border/40"
-                            style={{
-                              background: "oklch(0.34 0.095 155 / 0.06)",
-                            }}
+                          <h3
+                            className="font-sans-display font-bold mb-3"
+                            style={{ color }}
                           >
-                            <h3 className="font-sans-display font-bold text-forest">
-                              {month.month}
-                            </h3>
+                            {label}
+                          </h3>
+                          <div className="space-y-1.5 mb-3">
+                            {costs.map((c) => (
+                              <div
+                                key={c.component}
+                                className="flex justify-between text-xs font-body"
+                              >
+                                <span className="text-muted-foreground">
+                                  {c.component}
+                                </span>
+                                <span className="font-semibold text-foreground">
+                                  ₹{c.cost}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                          <Table>
-                            <TableBody>
-                              {month.weeks.map((w) => (
-                                <TableRow key={w.week}>
-                                  <TableCell className="font-sans-display font-semibold text-sm w-20">
-                                    {w.week}
-                                  </TableCell>
-                                  <TableCell className="text-sm font-body">
-                                    {w.focus}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge className="bg-forest/10 text-forest border-0 font-sans-display text-xs">
-                                      {w.goal}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
+                          <div className="border-t border-border/50 pt-2 flex justify-between font-sans-display font-bold text-sm">
+                            <span>Profit/unit</span>
+                            <span style={{ color }}>₹{profit}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
                   </TabsContent>
 
-                  {/* Scaling Roadmap */}
-                  <TabsContent value="scale">
-                    <div className="glass-light rounded-2xl overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead className="font-sans-display text-xs">
-                              Stage
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Revenue Level
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Action
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {scalingRoadmap.map((row) => (
-                            <TableRow key={row.stage}>
-                              <TableCell>
-                                <span className="font-sans-display font-bold text-forest">
-                                  {row.stage}
-                                </span>
-                              </TableCell>
-                              <TableCell className="font-sans-display font-semibold text-foreground">
-                                {row.revenue}
-                              </TableCell>
-                              <TableCell className="text-sm font-body text-muted-foreground">
-                                {row.action}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </TabsContent>
-
-                  {/* Content Calendar */}
-                  <TabsContent value="content">
-                    <div className="glass-light rounded-2xl overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead className="font-sans-display text-xs w-16">
-                              Day
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Reel Topic
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Hook
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs w-32">
-                              CTA
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {contentCalendar.map((row) => (
-                            <TableRow key={row.day}>
-                              <TableCell className="font-sans-display font-bold text-forest">
-                                Day {row.day}
-                              </TableCell>
-                              <TableCell className="font-sans-display font-semibold text-sm text-foreground">
-                                {row.topic}
-                              </TableCell>
-                              <TableCell className="text-sm font-body text-muted-foreground italic">
-                                {row.hook}
-                              </TableCell>
-                              <TableCell>
-                                <Badge className="bg-coral/10 text-coral border-0 font-sans-display text-xs">
-                                  {row.cta}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </TabsContent>
-
-                  {/* Market Research */}
-                  <TabsContent value="market">
-                    <div className="glass-light rounded-2xl overflow-hidden">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/50">
-                            <TableHead className="font-sans-display text-xs">
-                              Brand
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Platform
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Price
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Strength
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Weakness
-                            </TableHead>
-                            <TableHead className="font-sans-display text-xs">
-                              Gap We Fill
-                            </TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {competitors.map((row) => (
-                            <TableRow key={row.brand}>
-                              <TableCell className="font-sans-display font-bold text-foreground text-sm">
-                                {row.brand}
-                              </TableCell>
-                              <TableCell className="text-sm font-body">
-                                {row.platform}
-                              </TableCell>
-                              <TableCell className="font-sans-display font-semibold text-sm">
-                                {row.price}
-                              </TableCell>
-                              <TableCell className="text-sm font-body text-green-700">
-                                {row.strength}
-                              </TableCell>
-                              <TableCell className="text-sm font-body text-red-600">
-                                {row.weakness}
-                              </TableCell>
-                              <TableCell>
-                                <Badge className="bg-forest/10 text-forest border-0 font-sans-display text-xs">
-                                  {row.gap}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </TabsContent>
-
-                  {/* Ambassador Program */}
-                  <TabsContent value="ambassador">
-                    <div className="glass-light rounded-2xl overflow-hidden">
-                      <div
-                        className="px-5 py-4 border-b border-border/40"
-                        style={{ background: "rgba(255,255,255,0.5)" }}
-                      >
-                        <p className="font-sans-display font-bold text-foreground text-sm">
-                          Student Ambassador Tracker
-                        </p>
-                        <p className="text-muted-foreground font-body text-xs mt-0.5">
-                          Offer: Free digital kit + 20% commission
-                        </p>
-                      </div>
-                      <div className="text-center py-12 text-muted-foreground font-body">
-                        <div className="flex flex-col items-center gap-2">
-                          <Star className="w-8 h-8 text-muted-foreground/40" />
-                          <p className="font-sans-display font-semibold text-foreground">
-                            No ambassadors yet
-                          </p>
-                          <p className="text-sm">
-                            Reach out to student creators with 1K–10K followers
-                          </p>
+                  <TabsContent value="plan">
+                    <div className="glass-light rounded-2xl p-5 space-y-4">
+                      {[
+                        {
+                          month: "Month 1",
+                          title: "Validation",
+                          items: [
+                            "Design + research → Final prototype",
+                            "Feedback from 10 testers",
+                            "Instagram → 20 posts",
+                            "Pre-orders → 20 paid",
+                          ],
+                        },
+                        {
+                          month: "Month 2",
+                          title: "Launch",
+                          items: [
+                            "Print 50 units → Inventory ready",
+                            "Deliver + collect reviews",
+                            "5 testimonials",
+                            "Paid ads test → Break-even",
+                          ],
+                        },
+                        {
+                          month: "Month 3",
+                          title: "Scale",
+                          items: [
+                            "Reinvest → Print 100 units",
+                            "Ambassador drive → 20 partners",
+                            "Bundle marketing → Increase AOV",
+                            "Target → ₹50,000 revenue month",
+                          ],
+                        },
+                      ].map((m) => (
+                        <div key={m.month}>
+                          <h4 className="font-sans-display font-bold text-foreground mb-2">
+                            {m.month} — {m.title}
+                          </h4>
+                          <ul className="space-y-1">
+                            {m.items.map((item) => (
+                              <li
+                                key={item}
+                                className="text-sm font-body text-muted-foreground flex items-start gap-2"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-forest flex-shrink-0 mt-0.5" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
+                      ))}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="scale">
+                    <div className="glass-light rounded-2xl p-5 space-y-3">
+                      {[
+                        {
+                          stage: "Stage 1",
+                          revenue: "₹50K/month",
+                          action: "Improve packaging",
+                        },
+                        {
+                          stage: "Stage 2",
+                          revenue: "₹1L/month",
+                          action: "JEE/NEET edition",
+                        },
+                        {
+                          stage: "Stage 3",
+                          revenue: "₹3L/month",
+                          action: "Coaching partnerships",
+                        },
+                        {
+                          stage: "Stage 4",
+                          revenue: "₹10L/month",
+                          action: "Dropship bundles",
+                        },
+                        {
+                          stage: "Stage 5",
+                          revenue: "₹20L+/month",
+                          action: "App development",
+                        },
+                      ].map((s, i) => (
+                        <div
+                          key={s.stage}
+                          className="flex items-center gap-4 p-3 rounded-xl"
+                          style={{
+                            background: `oklch(0.34 0.095 155 / ${0.03 + i * 0.015})`,
+                            border: `1px solid oklch(0.34 0.095 155 / ${0.06 + i * 0.02})`,
+                          }}
+                        >
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center font-display font-bold text-white text-sm flex-shrink-0"
+                            style={{ background: "oklch(0.34 0.095 155)" }}
+                          >
+                            {i + 1}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-sans-display font-bold text-sm text-foreground">
+                              {s.revenue}
+                            </p>
+                            <p className="text-xs text-muted-foreground font-body">
+                              {s.action}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="edit">
+                    <div className="glass-light rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-sans-display font-bold text-foreground">
+                          Editable Site Content
+                        </h3>
+                        {!editMode && (
+                          <Button
+                            size="sm"
+                            onClick={handleEditButtonClick}
+                            className="text-xs bg-blue-600 text-white hover:bg-blue-700"
+                            data-ocid="admin.toolkit_edit_button"
+                          >
+                            <Edit2 className="w-3 h-3 mr-1" />
+                            Edit (RDS@EDIT)
+                          </Button>
+                        )}
                       </div>
+                      {editMode ? (
+                        <div className="space-y-3">
+                          {(
+                            [
+                              ["heroTitle", "Hero Title"],
+                              ["heroSubtitle", "Hero Subtitle"],
+                              ["earlyBirdText", "Early Bird Text"],
+                              ["footerPhone", "Footer Phone"],
+                              ["footerShipping", "Footer Shipping Info"],
+                              ["upgradeNudge", "Upgrade Nudge Text"],
+                            ] as [keyof typeof editDraft, string][]
+                          ).map(([key, label]) => (
+                            <div key={key}>
+                              <Label className="font-sans-display text-xs font-semibold mb-1 block">
+                                {label}
+                              </Label>
+                              <Textarea
+                                value={editDraft[key]}
+                                onChange={(e) =>
+                                  setEditDraft((prev) => ({
+                                    ...prev,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                rows={2}
+                                className="bg-white/70 resize-none text-sm"
+                                data-ocid={`admin.edit_${key}_textarea`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-3 text-sm font-body">
+                          {(
+                            [
+                              ["heroTitle", "Hero Title"],
+                              ["heroSubtitle", "Hero Subtitle"],
+                              ["earlyBirdText", "Early Bird Text"],
+                              ["footerPhone", "Footer Phone"],
+                              ["footerShipping", "Footer Shipping Info"],
+                              ["upgradeNudge", "Upgrade Nudge"],
+                            ] as [keyof typeof editableContent, string][]
+                          ).map(([key, label]) => (
+                            <div
+                              key={key}
+                              className="p-3 rounded-xl bg-muted/30 border border-border"
+                            >
+                              <p className="text-xs text-muted-foreground font-sans-display font-semibold mb-1">
+                                {label}
+                              </p>
+                              <p className="text-foreground">
+                                {editableContent[key]}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </TabsContent>
                 </Tabs>
@@ -2288,9 +3063,14 @@ export default function AdminPage({
       </div>
 
       {/* Floating Edit Bar */}
-      {editMode && (
-        <FloatingEditBar onSave={handleSaveEdit} onCancel={handleCancelEdit} />
-      )}
+      <AnimatePresence>
+        {editMode && (
+          <FloatingEditBar
+            onSave={handleSaveEdit}
+            onCancel={handleCancelEdit}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

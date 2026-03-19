@@ -1,0 +1,261 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Fonts ── */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque[opsz,wdth,wght].woff2")
+    format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fraunces";
+  src: url("/assets/fonts/Fraunces[SOFT,WONK,opsz,wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans-Variable.woff2") format("woff2");
+  font-weight: 200 700;
+  font-display: swap;
+}
+
+@layer base {
+  /* ── Hide all scrollbars globally (keep scroll functionality) ── */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
+
+  :root {
+    --radius: 0.75rem;
+
+    /* ── Palette: Deep Forest Green + Warm Amber + Cream ── */
+    --background: 0.97 0.008 85;
+    --foreground: 0.16 0.025 60;
+
+    --card: 0.99 0.004 80;
+    --card-foreground: 0.16 0.025 60;
+
+    --popover: 0.99 0.004 80;
+    --popover-foreground: 0.16 0.025 60;
+
+    /* Primary: Deep forest green */
+    --primary: 0.34 0.095 155;
+    --primary-foreground: 0.97 0.008 85;
+
+    /* Secondary: Warm amber */
+    --secondary: 0.78 0.12 72;
+    --secondary-foreground: 0.16 0.025 60;
+
+    /* Muted */
+    --muted: 0.92 0.012 80;
+    --muted-foreground: 0.48 0.025 60;
+
+    /* Accent: Coral/rust for Premium */
+    --accent: 0.62 0.18 30;
+    --accent-foreground: 0.97 0.008 85;
+
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    --border: 0.88 0.018 75;
+    --input: 0.88 0.018 75;
+    --ring: 0.34 0.095 155;
+
+    /* Charts */
+    --chart-1: 0.34 0.095 155;
+    --chart-2: 0.78 0.12 72;
+    --chart-3: 0.62 0.18 30;
+    --chart-4: 0.55 0.14 200;
+    --chart-5: 0.7 0.16 90;
+
+    /* Sidebar */
+    --sidebar: 0.19 0.035 155;
+    --sidebar-foreground: 0.92 0.012 80;
+    --sidebar-primary: 0.78 0.12 72;
+    --sidebar-primary-foreground: 0.16 0.025 60;
+    --sidebar-accent: 0.28 0.05 155;
+    --sidebar-accent-foreground: 0.92 0.012 80;
+    --sidebar-border: 0.28 0.05 155;
+    --sidebar-ring: 0.78 0.12 72;
+
+    /* Custom brand tokens */
+    --gold: 0.78 0.12 72;
+    --gold-light: 0.92 0.09 85;
+    --forest: 0.34 0.095 155;
+    --forest-dark: 0.22 0.07 155;
+    --coral: 0.62 0.18 30;
+    --cream: 0.97 0.008 85;
+    --kraft: 0.82 0.07 60;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "General Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: "Fraunces", serif;
+  }
+
+  h4,
+  h5,
+  h6,
+  .heading-sans {
+    font-family: "Bricolage Grotesque", sans-serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "Fraunces", serif;
+  }
+  .font-sans-display {
+    font-family: "Bricolage Grotesque", sans-serif;
+  }
+  .font-body {
+    font-family: "General Sans", sans-serif;
+  }
+
+  .text-gold {
+    color: oklch(var(--gold));
+  }
+  .bg-gold {
+    background-color: oklch(var(--gold));
+  }
+  .text-forest {
+    color: oklch(var(--forest));
+  }
+  .bg-forest {
+    background-color: oklch(var(--forest));
+  }
+  .text-coral {
+    color: oklch(var(--coral));
+  }
+  .bg-coral {
+    background-color: oklch(var(--coral));
+  }
+  .bg-cream {
+    background-color: oklch(var(--cream));
+  }
+  .bg-kraft {
+    background-color: oklch(var(--kraft));
+  }
+
+  /* Grain texture overlay */
+  .grain-overlay {
+    position: relative;
+  }
+  .grain-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+    border-radius: inherit;
+  }
+
+  .early-bird-badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold;
+    background: oklch(var(--gold));
+    color: oklch(var(--foreground));
+    font-family: "Bricolage Grotesque", sans-serif;
+  }
+
+  .hero-gradient {
+    background: linear-gradient(
+      135deg,
+      oklch(0.19 0.035 155) 0%,
+      oklch(0.26 0.06 155) 40%,
+      oklch(0.22 0.05 170) 100%
+    );
+  }
+
+  .section-divider {
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      oklch(var(--gold)),
+      transparent
+    );
+  }
+
+  /* ── Liquid Glass System ── */
+
+  /* Base glass — for dark hero backgrounds */
+  .glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px) saturate(1.6);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0
+      rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  /* Frosted glass for light/cream backgrounds */
+  .glass-light {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(24px) saturate(1.8);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    border: 1px solid rgba(255, 255, 255, 0.88);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.07), 0 1px 4px rgba(0, 0, 0, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  }
+
+  /* Dark glass for navbar/hero */
+  .glass-dark {
+    background: oklch(0.19 0.035 155 / 0.86);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 1px 0
+      rgba(255, 255, 255, 0.1);
+  }
+
+  /* Hover glow for glass cards */
+  .glass-hover {
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .glass-hover:hover {
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.98);
+    border-color: rgba(255, 255, 255, 0.98);
+  }
+
+  /* Utility: thin scrollbar visible on hover for explicit scroll containers */
+  .glass-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+  }
+  .glass-scroll::-webkit-scrollbar {
+    display: block;
+    width: 4px;
+  }
+  .glass-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .glass-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 2px;
+  }
+}

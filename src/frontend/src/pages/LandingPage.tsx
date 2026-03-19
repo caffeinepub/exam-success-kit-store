@@ -35,7 +35,7 @@ const plannerSections = [
   { section: "Mock Test Tracker", pages: 5, purpose: "Score improvement" },
   { section: "Mistake Log", pages: 3, purpose: "Error analysis" },
   { section: "Parent Review", pages: 3, purpose: "Weekly sign" },
-  { section: "Notes Pages", pages: "Remaining", purpose: "Flexibility" },
+  { section: "Essential Notes", pages: 10, purpose: "Flexibility" },
 ];
 
 const sectionIcons = [
@@ -228,7 +228,7 @@ export default function LandingPage({
               >
                 <span className="relative z-10 flex items-center gap-2">
                   <Crown className="w-5 h-5" />
-                  Elite Custom — ₹799
+                  Elite Custom — ₹850
                 </span>
                 <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>
@@ -398,7 +398,7 @@ export default function LandingPage({
                         className="font-bold text-lg"
                         style={{ color: "#fbbf24" }}
                       >
-                        ₹799
+                        ₹850
                       </span>
                     </div>
                   </div>
@@ -498,7 +498,7 @@ export default function LandingPage({
                 <div className="px-6 py-5 flex-1 flex flex-col">
                   <ul className="space-y-2.5 flex-1">
                     {[
-                      "100-page exam planner",
+                      "110-page exam planner",
                       "B&W focused layout",
                       "Kraft natural cover",
                       "3 minimal stickers",
@@ -573,7 +573,7 @@ export default function LandingPage({
                 <div className="px-6 py-5 flex-1 flex flex-col">
                   <ul className="space-y-2.5 flex-1">
                     {[
-                      "100-page exam planner",
+                      "110-page exam planner",
                       "Full colour inside pages",
                       "Bold colour cover",
                       "8 vibrant stickers",
@@ -653,7 +653,7 @@ export default function LandingPage({
                   </div>
                   <div className="text-right">
                     <div className="font-display text-3xl font-bold text-amber-700">
-                      ₹799
+                      ₹850
                     </div>
                     <div className="text-xs text-amber-600/70 font-body">
                       fixed price
@@ -748,7 +748,7 @@ export default function LandingPage({
                     data-ocid="editions.elite_order_button"
                   >
                     <Crown className="w-4 h-4" />
-                    Order Elite — ₹799
+                    Order Elite — ₹850
                   </button>
                 </div>
               </div>
@@ -810,7 +810,7 @@ export default function LandingPage({
                   style={{ color: "#d97706" }}
                 >
                   <Crown className="w-3.5 h-3.5" />
-                  Elite ₹799
+                  Elite ₹850
                 </div>
               </div>
               {featureRows.map((row, i) => (
@@ -848,7 +848,7 @@ export default function LandingPage({
           >
             <div className="section-divider mb-8" />
             <h2 className="font-display text-3xl sm:text-4xl font-bold text-foreground mb-4">
-              100 Pages of Pure Focus
+              110 Pages of Pure Focus
             </h2>
             <p className="text-muted-foreground font-body text-lg max-w-2xl mx-auto">
               Every page is intentionally designed. No filler. No wasted space.
@@ -992,7 +992,7 @@ export default function LandingPage({
                 data-ocid="cta.elite_order_button"
               >
                 <Crown className="w-5 h-5" />
-                Elite Custom — ₹799
+                Elite Custom — ₹850
               </button>
             </div>
             <p className="text-white/50 text-sm mt-5 font-body">

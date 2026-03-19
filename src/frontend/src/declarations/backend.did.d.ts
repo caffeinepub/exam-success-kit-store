@@ -34,8 +34,12 @@ export interface Order {
   'phone' : string,
   'pricePaid' : bigint,
   'pincode' : string,
+  'country' : string,
   'examType' : string,
   'bonusPages' : string,
+  'dueDate' : string,
+  'priority' : string,
+  'customPriority' : boolean,
 }
 export interface Stats {
   'totalOrders' : bigint,
@@ -45,7 +49,9 @@ export interface Stats {
   'totalProfit' : bigint,
   'pendingCancelRequests' : bigint,
   'totalRevenue' : bigint,
-  'earlyBirdUsed' : bigint,
+  'earlyBirdUsedBase' : bigint,
+  'earlyBirdUsedPremium' : bigint,
+  'investmentAmount' : bigint,
 }
 export interface UserProfile {
   'name' : string,
@@ -72,6 +78,8 @@ export interface _SERVICE {
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'placeOrder' : ActorMethod<
     [
+      string,
+      string,
       string,
       string,
       string,

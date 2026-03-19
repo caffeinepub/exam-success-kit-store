@@ -15,7 +15,9 @@ export interface Stats {
     totalProfit: bigint;
     pendingCancelRequests: bigint;
     totalRevenue: bigint;
-    earlyBirdUsed: bigint;
+    earlyBirdUsedBase: bigint;
+    earlyBirdUsedPremium: bigint;
+    investmentAmount: bigint;
 }
 export interface CancelRequest {
     id: string;
@@ -41,8 +43,12 @@ export interface Order {
     phone: string;
     pricePaid: bigint;
     pincode: string;
+    country: string;
     examType: string;
     bonusPages: string;
+    dueDate: string;
+    priority: string;
+    customPriority: boolean;
 }
 export interface UserProfile {
     name: string;
@@ -68,7 +74,7 @@ export interface backendInterface {
     getStats(): Promise<Stats>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
-    placeOrder(customerName: string, phone: string, email: string, address: string, pincode: string, paymentMethod: string, edition: string, customName: string, examType: string, bonusPages: string): Promise<string>;
+    placeOrder(customerName: string, phone: string, email: string, address: string, pincode: string, country: string, paymentMethod: string, edition: string, customName: string, examType: string, bonusPages: string, dueDate: string): Promise<string>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     submitCancelRequest(orderId: string, customerEmail: string, customerPhone: string, reason: string, requestType: string): Promise<string>;
     updateCancelRequest(requestId: string, newStatus: string): Promise<boolean>;

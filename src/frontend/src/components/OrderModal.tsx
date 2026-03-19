@@ -19,15 +19,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   Crown,
   ExternalLink,
   FileText,
   Loader2,
-  Smartphone,
+  ShieldCheck,
   Star,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import { usePlaceOrder } from "../hooks/useQueries";
@@ -37,6 +38,39 @@ interface Props {
   onClose: () => void;
   defaultEdition: "base" | "premium" | "elite";
   onNavigatePolicies?: () => void;
+}
+
+const COUNTRIES = [
+  "India",
+  "USA",
+  "UK",
+  "Australia",
+  "UAE",
+  "Canada",
+  "Singapore",
+  "Malaysia",
+  "Germany",
+  "France",
+  "Japan",
+  "Other",
+];
+
+function getDueDateOptions(): string[] {
+  const options: string[] = [];
+  const base = new Date();
+  base.setHours(0, 0, 0, 0);
+  for (let i = 3; i < 7; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    options.push(
+      d.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+    );
+  }
+  return options;
 }
 
 export default function OrderModal({
@@ -54,6 +88,8 @@ export default function OrderModal({
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [pincode, setPincode] = useState("");
+  const [country, setCountry] = useState("India");
+  const [selectedDate, setSelectedDate] = useState("");
   // Elite-specific fields
   const [coverName, setCoverName] = useState("");
   const [examType, setExamType] = useState("");
@@ -64,6 +100,8 @@ export default function OrderModal({
 
   const { mutate: placeOrder, isPending } = usePlaceOrder();
 
+  const dateOptions = useMemo(() => getDueDateOptions(), []);
+
   const handleOpenChange = (val: boolean) => {
     if (!val) {
       onClose();
@@ -73,6 +111,8 @@ export default function OrderModal({
         setPhone("");
         setAddress("");
         setPincode("");
+        setCountry("India");
+        setSelectedDate("");
         setCoverName("");
         setExamType("");
         setBonusPages("");
@@ -92,6 +132,8 @@ export default function OrderModal({
       newErrors.address = "Please enter your full delivery address";
     if (!/^\d{6}$/.test(pincode))
       newErrors.pincode = "Enter a valid 6-digit pincode";
+    if (!selectedDate)
+      newErrors.dueDate = "Please select a preferred delivery date";
     if (edition === "elite") {
       if (!coverName.trim())
         newErrors.coverName = "Enter your name for the cover";
@@ -118,19 +160,35 @@ export default function OrderModal({
         email: userEmail ?? "",
         address: address.trim(),
         pincode,
+        country,
         paymentMethod: "UPI",
         edition: editionString,
         customName: edition === "elite" ? coverName.trim() : "",
         examType: edition === "elite" ? examType : "",
         bonusPages: edition === "elite" ? bonusPages : "",
+        dueDate: selectedDate,
       },
       {
         onSuccess: (id) => {
           setOrderId(id);
+          try {
+            const existing = JSON.parse(
+              localStorage.getItem("examkit_order_duedates") ?? "{}",
+            );
+            existing[id] = selectedDate;
+            localStorage.setItem(
+              "examkit_order_duedates",
+              JSON.stringify(existing),
+            );
+          } catch {
+            // ignore
+          }
           toast.success("Order placed successfully!");
         },
-        onError: () => {
-          toast.error("Failed to place order. Please try again.");
+        onError: (error) => {
+          const msg =
+            error instanceof Error ? error.message : "Please try again.";
+          toast.error(`Failed to place order: ${msg}`);
         },
       },
     );
@@ -139,7 +197,7 @@ export default function OrderModal({
   const isEarlyBird = true;
   const basePrice = isEarlyBird ? 449 : 499;
   const premiumPrice = isEarlyBird ? 549 : 599;
-  const elitePrice = 799;
+  const elitePrice = 850;
   const currentPrice =
     edition === "base"
       ? basePrice
@@ -147,12 +205,11 @@ export default function OrderModal({
         ? premiumPrice
         : elitePrice;
   const originalPrice =
-    edition === "base" ? 499 : edition === "premium" ? 599 : 799;
+    edition === "base" ? 499 : edition === "premium" ? 599 : 850;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md w-full max-h-[92vh] overflow-y-auto p-0 border-0 bg-transparent shadow-none">
-        {/* Glass morphism wrapper */}
         <div
           className="relative rounded-3xl overflow-hidden"
           style={{
@@ -164,7 +221,6 @@ export default function OrderModal({
               "0 32px 64px -12px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.6), inset 0 1px 0 rgba(255,255,255,0.9)",
           }}
         >
-          {/* Subtle gradient accent at top */}
           <div
             className="absolute top-0 left-0 right-0 h-1 rounded-t-3xl"
             style={{
@@ -201,7 +257,6 @@ export default function OrderModal({
                 className="py-4 text-center space-y-5"
                 data-ocid="order.success_state"
               >
-                {/* Success animation */}
                 <div
                   className="w-20 h-20 rounded-full flex items-center justify-center mx-auto"
                   style={{
@@ -222,7 +277,7 @@ export default function OrderModal({
                   </p>
                 </div>
 
-                {/* Order ID - prominent */}
+                {/* Order ID — prominent */}
                 <div
                   className="rounded-2xl p-4 text-sm font-body"
                   style={{
@@ -254,34 +309,38 @@ export default function OrderModal({
                   </p>
                 </div>
 
-                {/* UPI payment info */}
+                {selectedDate && (
+                  <div
+                    className="rounded-2xl p-3 text-sm flex items-center gap-2"
+                    style={{
+                      background: "oklch(0.34 0.095 155 / 0.06)",
+                      border: "1px solid oklch(0.34 0.095 155 / 0.18)",
+                    }}
+                  >
+                    <CalendarDays className="w-4 h-4 text-forest flex-shrink-0" />
+                    <p className="font-body text-sm text-forest font-semibold">
+                      Preferred delivery: {selectedDate}
+                    </p>
+                  </div>
+                )}
+
                 <div
-                  className="rounded-2xl p-4 text-sm flex items-start gap-3"
+                  className="rounded-2xl p-4 text-sm"
                   style={{
                     background:
                       "linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.04))",
                     border: "1px solid rgba(16, 185, 129, 0.25)",
                   }}
                 >
-                  <Smartphone className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-left">
-                    <p className="font-sans-display font-semibold text-emerald-800 text-sm">
-                      UPI Payment Details
-                    </p>
-                    <p className="text-emerald-700 font-body text-xs mt-1">
-                      We'll send you the UPI ID on WhatsApp within 30 minutes.
-                      Pay ₹{currentPrice} after receiving the message.
-                    </p>
-                  </div>
+                  <p className="font-sans-display font-semibold text-emerald-800 text-sm mb-1">
+                    Payment Instructions
+                  </p>
+                  <p className="text-emerald-700 font-body text-xs">
+                    You'll receive UPI payment details shortly. Pay ₹
+                    {currentPrice} to complete your order.
+                  </p>
                 </div>
 
-                <p className="text-muted-foreground text-xs font-body">
-                  Use your Order ID{" "}
-                  <strong className="font-mono text-foreground">
-                    {orderId}
-                  </strong>{" "}
-                  on the Track Order page to track your order.
-                </p>
                 <Button
                   onClick={() => handleOpenChange(false)}
                   className="w-full bg-forest text-white hover:bg-forest/90 rounded-xl font-sans-display font-semibold"
@@ -292,7 +351,7 @@ export default function OrderModal({
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Edition Toggle — 3 buttons */}
+                {/* Edition Toggle */}
                 <div>
                   <Label className="font-sans-display font-semibold text-sm mb-3 block text-foreground">
                     Choose Edition
@@ -330,8 +389,7 @@ export default function OrderModal({
                           color: "oklch(0.3 0.05 72)",
                         }}
                       >
-                        <Star className="w-2 h-2" />
-                        EB
+                        Best Value
                       </span>
                     </button>
 
@@ -339,10 +397,10 @@ export default function OrderModal({
                     <button
                       type="button"
                       onClick={() => setEdition("premium")}
-                      className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      className={`p-3 rounded-xl border-2 text-left transition-all relative ${
                         edition === "premium"
-                          ? "border-coral bg-coral/5 shadow-sm"
-                          : "border-border hover:border-coral/50 bg-white/60"
+                          ? "border-amber-500 bg-amber-50/50 shadow-sm"
+                          : "border-border hover:border-amber-400/50 bg-white/60"
                       }`}
                       data-ocid="order.premium_tab"
                     >
@@ -353,19 +411,19 @@ export default function OrderModal({
                         <span className="text-muted-foreground line-through text-xs">
                           ₹599
                         </span>
-                        <span className="font-bold text-coral text-sm">
+                        <span className="font-bold text-amber-700 text-sm">
                           ₹{premiumPrice}
                         </span>
                       </div>
                       <span
                         className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-body mt-1"
                         style={{
-                          background: "oklch(0.62 0.18 30 / 0.12)",
-                          color: "oklch(0.5 0.15 30)",
+                          background: "oklch(0.75 0.15 55 / 0.2)",
+                          color: "oklch(0.35 0.08 55)",
                         }}
                       >
-                        <Star className="w-2 h-2" />
-                        EB
+                        <Star className="w-2.5 h-2.5" />
+                        All Rounder
                       </span>
                     </button>
 
@@ -373,27 +431,25 @@ export default function OrderModal({
                     <button
                       type="button"
                       onClick={() => setEdition("elite")}
-                      className={`p-3 rounded-xl border-2 text-left transition-all relative overflow-hidden ${
+                      className={`p-3 rounded-xl border-2 text-left transition-all ${
                         edition === "elite"
-                          ? "border-amber-500 bg-amber-50 shadow-sm"
-                          : "border-border hover:border-amber-400 bg-white/60"
+                          ? "border-amber-600 bg-amber-50/60 shadow-sm"
+                          : "border-border hover:border-amber-500/50 bg-white/60"
                       }`}
                       data-ocid="order.elite_tab"
                     >
-                      <Crown className="w-3 h-3 text-amber-600 mb-0.5" />
-                      <div className="font-sans-display font-bold text-xs text-foreground">
+                      <div className="font-sans-display font-bold text-xs text-foreground flex items-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-600" />
                         Elite
                       </div>
-                      <div className="flex items-center gap-1 mt-1">
-                        <span className="font-bold text-amber-600 text-sm">
-                          ₹{elitePrice}
-                        </span>
+                      <div className="font-bold text-amber-700 text-sm mt-1">
+                        ₹{elitePrice}
                       </div>
                       <span
-                        className="inline-flex text-[10px] px-1.5 py-0.5 rounded-full font-body mt-1"
+                        className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full font-body mt-1"
                         style={{
-                          background: "oklch(0.78 0.12 72 / 0.25)",
-                          color: "oklch(0.45 0.1 72)",
+                          background: "oklch(0.78 0.12 72 / 0.3)",
+                          color: "oklch(0.28 0.06 72)",
                         }}
                       >
                         Custom
@@ -402,450 +458,420 @@ export default function OrderModal({
                   </div>
                 </div>
 
-                {/* Elite-specific fields */}
+                {/* Elite no-returns warning */}
                 {edition === "elite" && (
                   <div
-                    className="space-y-4 rounded-2xl p-4"
+                    className="p-3 rounded-xl text-xs font-body flex items-start gap-2"
                     style={{
-                      background:
-                        "linear-gradient(135deg, rgba(251,191,36,0.1), rgba(245,158,11,0.06))",
-                      border: "1.5px solid rgba(217,119,6,0.3)",
+                      background: "rgba(217,119,6,0.06)",
+                      border: "1px solid rgba(217,119,6,0.2)",
                     }}
                   >
-                    <div className="flex items-center gap-2">
-                      <Crown className="w-4 h-4 text-amber-600" />
-                      <span className="font-sans-display font-bold text-sm text-amber-800">
-                        Personalisation Details
-                      </span>
-                    </div>
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-amber-800">
+                      <strong>No Returns Policy:</strong> Elite planners are
+                      personalised and cannot be returned or exchanged once
+                      processing starts.
+                    </p>
+                  </div>
+                )}
 
-                    {/* Cover name */}
-                    <div>
-                      <Label
-                        htmlFor="cover-name"
-                        className="font-sans-display font-semibold text-xs mb-1.5 block text-amber-900"
+                {/* Customer Details */}
+                <div className="space-y-3">
+                  <Label className="font-sans-display font-semibold text-sm block text-foreground">
+                    Your Details
+                  </Label>
+
+                  <div>
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Full Name"
+                      className="bg-white/70"
+                      data-ocid="order.name_input"
+                    />
+                    {errors.name && (
+                      <p
+                        className="text-red-500 text-xs mt-1 font-body"
+                        data-ocid="order.name_error"
                       >
-                        Your Name for the Cover
-                      </Label>
+                        {errors.name}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <Input
+                      value={phone}
+                      onChange={(e) =>
+                        setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                      }
+                      placeholder="10-digit Phone Number"
+                      type="tel"
+                      inputMode="numeric"
+                      className="bg-white/70"
+                      data-ocid="order.phone_input"
+                    />
+                    {errors.phone && (
+                      <p
+                        className="text-red-500 text-xs mt-1 font-body"
+                        data-ocid="order.phone_error"
+                      >
+                        {errors.phone}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <Textarea
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="Full Delivery Address (House No, Street, Area, City)"
+                      rows={2}
+                      className="bg-white/70 resize-none"
+                      data-ocid="order.address_input"
+                    />
+                    {errors.address && (
+                      <p
+                        className="text-red-500 text-xs mt-1 font-body"
+                        data-ocid="order.address_error"
+                      >
+                        {errors.address}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
                       <Input
-                        id="cover-name"
+                        value={pincode}
+                        onChange={(e) =>
+                          setPincode(
+                            e.target.value.replace(/\D/g, "").slice(0, 6),
+                          )
+                        }
+                        placeholder="Pincode"
+                        type="tel"
+                        inputMode="numeric"
+                        className="bg-white/70"
+                        data-ocid="order.pincode_input"
+                      />
+                      {errors.pincode && (
+                        <p
+                          className="text-red-500 text-xs mt-1 font-body"
+                          data-ocid="order.pincode_error"
+                        >
+                          {errors.pincode}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Select value={country} onValueChange={setCountry}>
+                        <SelectTrigger
+                          className="bg-white/70"
+                          data-ocid="order.country_select"
+                        >
+                          <SelectValue placeholder="Country" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COUNTRIES.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {country !== "India" && (
+                    <p className="text-xs text-amber-700 font-body bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                      Note: We currently ship within India only. International
+                      orders may not be fulfilled.
+                    </p>
+                  )}
+                </div>
+
+                {/* ── Preferred Delivery Date ── */}
+                <div
+                  className="rounded-2xl p-4"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, oklch(0.96 0.025 145 / 0.9), oklch(0.94 0.03 145 / 0.7))",
+                    border: "2px solid oklch(0.55 0.13 145 / 0.45)",
+                    boxShadow: "0 2px 12px oklch(0.55 0.13 145 / 0.12)",
+                  }}
+                  data-ocid="order.date_picker"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <CalendarDays className="w-5 h-5 text-forest" />
+                    <Label className="font-sans-display font-bold text-base text-forest block">
+                      Preferred Delivery Date
+                    </Label>
+                    <span
+                      className="ml-auto text-[10px] font-sans-display font-bold px-2 py-0.5 rounded-full uppercase tracking-wide"
+                      style={{
+                        background: "oklch(0.34 0.095 155)",
+                        color: "white",
+                      }}
+                    >
+                      Required
+                    </span>
+                  </div>
+                  <p className="text-forest/70 text-xs font-body mb-3">
+                    Choose your preferred delivery date (minimum 3 days from
+                    today):
+                  </p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {dateOptions.map((dateStr) => {
+                      const isSelected = selectedDate === dateStr;
+                      return (
+                        <button
+                          key={dateStr}
+                          type="button"
+                          onClick={() => setSelectedDate(dateStr)}
+                          className="p-4 rounded-xl border-2 text-center transition-all"
+                          style={{
+                            background: isSelected
+                              ? "oklch(0.34 0.095 155)"
+                              : "rgba(255,255,255,0.85)",
+                            borderColor: isSelected
+                              ? "oklch(0.34 0.095 155)"
+                              : "oklch(0.55 0.13 145 / 0.3)",
+                            boxShadow: isSelected
+                              ? "0 4px 16px oklch(0.34 0.095 155 / 0.35)"
+                              : "none",
+                            color: isSelected ? "white" : "inherit",
+                          }}
+                          data-ocid="order.date_button"
+                        >
+                          <CalendarDays
+                            className="w-4 h-4 mx-auto mb-1.5"
+                            style={{
+                              color: isSelected
+                                ? "rgba(255,255,255,0.85)"
+                                : "oklch(0.34 0.095 155)",
+                            }}
+                          />
+                          <p
+                            className="font-sans-display font-bold text-sm"
+                            style={{
+                              color: isSelected ? "white" : "inherit",
+                            }}
+                          >
+                            {dateStr.split(" ").slice(0, 2).join(" ")}
+                          </p>
+                          <p
+                            className="text-xs font-body mt-0.5"
+                            style={{
+                              color: isSelected
+                                ? "rgba(255,255,255,0.75)"
+                                : "oklch(0.55 0.05 150)",
+                            }}
+                          >
+                            {dateStr.split(" ")[2]}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {errors.dueDate && (
+                    <p
+                      className="text-red-600 text-xs mt-2 font-body font-semibold"
+                      data-ocid="order.date_error"
+                    >
+                      ⚠ {errors.dueDate}
+                    </p>
+                  )}
+                </div>
+
+                {/* Elite-specific fields */}
+                {edition === "elite" && (
+                  <div className="space-y-3">
+                    <Label className="font-sans-display font-semibold text-sm block text-foreground">
+                      Personalisation
+                    </Label>
+
+                    <div>
+                      <Input
                         value={coverName}
-                        onChange={(e) => {
-                          setCoverName(e.target.value);
-                          if (errors.coverName)
-                            setErrors((prev) => ({ ...prev, coverName: "" }));
-                        }}
-                        placeholder="e.g. Aarav (becomes: Aarav's JEE 2026 Planner)"
-                        className="border-amber-300 focus-visible:ring-amber-400 bg-white/80"
+                        onChange={(e) => setCoverName(e.target.value)}
+                        placeholder="Name for cover (e.g. Aarav JEE 2026 Planner)"
+                        className="bg-white/70"
                         data-ocid="order.cover_name_input"
                       />
                       {errors.coverName && (
-                        <p
-                          className="text-destructive text-xs mt-1 font-body"
-                          data-ocid="order.cover_name_error"
-                        >
+                        <p className="text-red-500 text-xs mt-1 font-body">
                           {errors.coverName}
                         </p>
                       )}
                     </div>
 
-                    {/* Exam type */}
                     <div>
-                      <Label className="font-sans-display font-semibold text-xs mb-1.5 block text-amber-900">
-                        Exam You're Preparing For
-                      </Label>
-                      <Select
-                        value={examType}
-                        onValueChange={(v) => {
-                          setExamType(v);
-                          if (errors.examType)
-                            setErrors((prev) => ({ ...prev, examType: "" }));
-                        }}
-                      >
+                      <Select value={examType} onValueChange={setExamType}>
                         <SelectTrigger
-                          className="border-amber-300 focus:ring-amber-400 bg-white/80"
-                          data-ocid="order.exam_type_select"
+                          className="bg-white/70"
+                          data-ocid="order.exam_select"
                         >
-                          <SelectValue placeholder="Select your exam" />
+                          <SelectValue placeholder="Which exam are you preparing for?" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="JEE 2026">
-                            JEE 2026 (Main + Advanced)
+                          <SelectItem value="JEE">
+                            JEE (Mains + Advanced)
                           </SelectItem>
-                          <SelectItem value="NEET 2026">NEET 2026</SelectItem>
-                          <SelectItem value="CUET 2026">CUET 2026</SelectItem>
-                          <SelectItem value="Board Exams">
+                          <SelectItem value="NEET">NEET</SelectItem>
+                          <SelectItem value="CUET">CUET</SelectItem>
+                          <SelectItem value="Board">
                             Board Exams (Class 10/12)
                           </SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
+                          <SelectItem value="Other">
+                            Other Competitive Exam
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       {errors.examType && (
-                        <p
-                          className="text-destructive text-xs mt-1 font-body"
-                          data-ocid="order.exam_type_error"
-                        >
+                        <p className="text-red-500 text-xs mt-1 font-body">
                           {errors.examType}
                         </p>
                       )}
                     </div>
 
-                    {/* Bonus pages */}
                     <div>
-                      <Label className="font-sans-display font-semibold text-xs mb-2 block text-amber-900">
-                        Your Extra 20 Pages (choose one)
+                      <Label className="font-body text-xs text-muted-foreground mb-1.5 block">
+                        Choose your bonus 20 pages:
                       </Label>
                       <RadioGroup
                         value={bonusPages}
-                        onValueChange={(v) => {
-                          setBonusPages(v);
-                          if (errors.bonusPages)
-                            setErrors((prev) => ({ ...prev, bonusPages: "" }));
-                        }}
-                        className="space-y-2"
+                        onValueChange={setBonusPages}
+                        className="grid grid-cols-2 gap-2"
                         data-ocid="order.bonus_pages_radio"
                       >
                         {[
-                          {
-                            value: "Mock Test Pages",
-                            label: "Mock Test Pages",
-                            desc: "More score tracking sheets",
-                          },
-                          {
-                            value: "Subject Tracker",
-                            label: "Extra Subject Tracker",
-                            desc: "Deep dive per subject",
-                          },
-                          {
-                            value: "Advanced Habit Tracker",
-                            label: "Advanced Habit Tracker",
-                            desc: "Daily discipline system",
-                          },
-                          {
-                            value: "Mental Wellness Tracker",
-                            label: "Mental Wellness Tracker",
-                            desc: "Stress & motivation log",
-                          },
-                        ].map((opt) => (
+                          { value: "mock", label: "Mock Test Pages" },
+                          { value: "subject", label: "Subject Tracker" },
+                          { value: "habit", label: "Habit Tracker" },
+                          { value: "wellness", label: "Wellness Tracker" },
+                        ].map(({ value, label }) => (
                           <div
-                            key={opt.value}
-                            className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-all ${
-                              bonusPages === opt.value
-                                ? "border-amber-500 bg-amber-100/80"
-                                : "border-amber-200 bg-white/60 hover:border-amber-400"
+                            key={value}
+                            onClick={() => setBonusPages(value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") setBonusPages(value);
+                            }}
+                            className={`flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                              bonusPages === value
+                                ? "border-amber-500 bg-amber-50/50"
+                                : "border-border bg-white/60"
                             }`}
                           >
-                            <RadioGroupItem
-                              value={opt.value}
-                              id={`bonus-${opt.value}`}
-                            />
-                            <Label
-                              htmlFor={`bonus-${opt.value}`}
-                              className="cursor-pointer flex-1"
-                            >
-                              <span className="font-sans-display font-semibold text-xs text-foreground block">
-                                {opt.label}
-                              </span>
-                              <span className="text-muted-foreground text-xs font-body">
-                                {opt.desc}
-                              </span>
-                            </Label>
+                            <RadioGroupItem value={value} />
+                            <span className="font-body text-xs text-foreground">
+                              {label}
+                            </span>
                           </div>
                         ))}
                       </RadioGroup>
                       {errors.bonusPages && (
-                        <p
-                          className="text-destructive text-xs mt-1 font-body"
-                          data-ocid="order.bonus_pages_error"
-                        >
+                        <p className="text-red-500 text-xs mt-1 font-body">
                           {errors.bonusPages}
                         </p>
                       )}
                     </div>
-
-                    {/* No returns notice */}
-                    <div
-                      className="flex items-start gap-2 p-3 rounded-xl"
-                      style={{
-                        background: "rgba(239,68,68,0.06)",
-                        border: "1px solid rgba(239,68,68,0.2)",
-                      }}
-                      data-ocid="order.no_returns_notice"
-                    >
-                      <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                      <p className="text-red-700 text-xs font-body">
-                        <span className="font-semibold">
-                          No returns on Elite.
-                        </span>{" "}
-                        Personalised orders cannot be cancelled or returned once
-                        placed.
-                      </p>
-                    </div>
                   </div>
                 )}
 
-                {/* Name */}
-                <div>
-                  <Label
-                    htmlFor="order-name"
-                    className="font-sans-display font-semibold text-sm mb-1.5 block"
-                  >
-                    Full Name
-                  </Label>
-                  <Input
-                    id="order-name"
-                    value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      if (errors.name)
-                        setErrors((prev) => ({ ...prev, name: "" }));
-                    }}
-                    placeholder="e.g. Priya Sharma"
-                    autoComplete="name"
-                    className="bg-white/70"
-                    data-ocid="order.name_input"
-                  />
-                  {errors.name && (
-                    <p
-                      className="text-destructive text-xs mt-1 font-body"
-                      data-ocid="order.name_error"
-                    >
-                      {errors.name}
-                    </p>
-                  )}
-                </div>
-
-                {/* Phone */}
-                <div>
-                  <Label
-                    htmlFor="order-phone"
-                    className="font-sans-display font-semibold text-sm mb-1.5 block"
-                  >
-                    Phone Number
-                  </Label>
-                  <Input
-                    id="order-phone"
-                    value={phone}
-                    onChange={(e) => {
-                      setPhone(e.target.value.replace(/\D/g, "").slice(0, 10));
-                      if (errors.phone)
-                        setErrors((prev) => ({ ...prev, phone: "" }));
-                    }}
-                    placeholder="10-digit mobile number"
-                    type="tel"
-                    autoComplete="tel"
-                    inputMode="numeric"
-                    className="bg-white/70"
-                    data-ocid="order.phone_input"
-                  />
-                  {errors.phone && (
-                    <p
-                      className="text-destructive text-xs mt-1 font-body"
-                      data-ocid="order.phone_error"
-                    >
-                      {errors.phone}
-                    </p>
-                  )}
-                </div>
-
-                {/* Address */}
-                <div>
-                  <Label
-                    htmlFor="order-address"
-                    className="font-sans-display font-semibold text-sm mb-1.5 block"
-                  >
-                    Delivery Address
-                  </Label>
-                  <Textarea
-                    id="order-address"
-                    value={address}
-                    onChange={(e) => {
-                      setAddress(e.target.value);
-                      if (errors.address)
-                        setErrors((prev) => ({ ...prev, address: "" }));
-                    }}
-                    placeholder="House/Flat no., Street, Area, City, State"
-                    rows={3}
-                    className="bg-white/70 resize-none"
-                    data-ocid="order.address_textarea"
-                  />
-                  {errors.address && (
-                    <p
-                      className="text-destructive text-xs mt-1 font-body"
-                      data-ocid="order.address_error"
-                    >
-                      {errors.address}
-                    </p>
-                  )}
-                </div>
-
-                {/* Pincode */}
-                <div>
-                  <Label
-                    htmlFor="order-pincode"
-                    className="font-sans-display font-semibold text-sm mb-1.5 block"
-                  >
-                    Pincode
-                  </Label>
-                  <Input
-                    id="order-pincode"
-                    value={pincode}
-                    onChange={(e) => {
-                      setPincode(e.target.value.replace(/\D/g, "").slice(0, 6));
-                      if (errors.pincode)
-                        setErrors((prev) => ({ ...prev, pincode: "" }));
-                    }}
-                    placeholder="6-digit pincode"
-                    inputMode="numeric"
-                    className="bg-white/70"
-                    data-ocid="order.pincode_input"
-                  />
-                  {errors.pincode && (
-                    <p
-                      className="text-destructive text-xs mt-1 font-body"
-                      data-ocid="order.pincode_error"
-                    >
-                      {errors.pincode}
-                    </p>
-                  )}
-                </div>
-
-                {/* UPI payment info */}
-                <div
-                  className="rounded-2xl p-4 flex items-start gap-3"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.03))",
-                    border: "1px solid rgba(16,185,129,0.2)",
-                  }}
-                >
-                  <Smartphone className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-sans-display font-semibold text-emerald-800 text-sm">
-                      UPI Payment Only
-                    </p>
-                    <p className="text-emerald-700 font-body text-xs mt-0.5">
-                      After placing your order, we'll send the UPI ID to your
-                      WhatsApp number. Ships in 2–3 days after payment.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Total */}
-                <div
-                  className={`rounded-2xl p-4 border ${
-                    edition === "elite"
-                      ? "bg-amber-50/60 border-amber-200"
-                      : "bg-muted/40 border-border"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-body text-muted-foreground text-sm">
-                      Order Total
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {edition !== "elite" && (
-                        <span className="text-muted-foreground line-through text-sm">
-                          ₹{originalPrice}
-                        </span>
-                      )}
-                      <span
-                        className={`font-display font-bold text-xl ${
-                          edition === "elite"
-                            ? "text-amber-700"
-                            : "text-foreground"
-                        }`}
-                      >
-                        ₹{currentPrice}
-                      </span>
-                      {edition !== "elite" ? (
-                        <span
-                          className="text-xs font-body px-2 py-0.5 rounded-full"
-                          style={{
-                            background: "oklch(0.78 0.12 72 / 0.25)",
-                            color: "oklch(0.3 0.05 72)",
-                          }}
-                        >
-                          Early Bird
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-body px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                          <Crown className="w-3 h-3" />
-                          Elite
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Policy Snippet */}
+                {/* ── Store Policies Summary Card ── */}
                 <div
                   className="rounded-2xl p-4 space-y-3"
                   style={{
-                    background: "rgba(51,65,85,0.04)",
-                    border: "1px solid rgba(51,65,85,0.1)",
+                    background:
+                      "linear-gradient(135deg, rgba(255,255,255,0.75), rgba(240,253,244,0.9))",
+                    backdropFilter: "blur(12px)",
+                    WebkitBackdropFilter: "blur(12px)",
+                    border: "1px solid oklch(0.75 0.1 145 / 0.4)",
+                    boxShadow:
+                      "inset 0 1px 0 rgba(255,255,255,0.8), 0 2px 8px oklch(0.55 0.1 145 / 0.08)",
                   }}
-                  data-ocid="order.policy_section"
+                  data-ocid="order.policy_card"
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    <span className="font-sans-display font-semibold text-sm text-foreground">
-                      Store Policies Summary
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-forest flex-shrink-0" />
+                    <p className="font-sans-display font-bold text-sm text-forest">
+                      Store Policies
+                    </p>
                   </div>
                   <ul className="space-y-1.5">
                     {[
+                      "Orders processed in 2–4 business days; Elite in 5–7 days",
                       "Cancel within 12 hours only if processing hasn't started",
-                      "Customized (Elite) planners are non-returnable",
-                      "Refunds processed within 5–7 business days after approval",
-                    ].map((pt) => (
+                      "Damaged/wrong items eligible for replacement (report within 48 hrs with unboxing video)",
+                      "Change of mind returns: ₹200 deduction applies",
+                      "Refunds processed in 5–7 business days after approval",
+                    ].map((point) => (
                       <li
-                        key={pt}
-                        className="flex items-start gap-2 text-xs font-body text-muted-foreground"
+                        key={point}
+                        className="flex items-start gap-2 text-xs font-body text-foreground/80"
                       >
-                        <span className="w-1 h-1 rounded-full bg-muted-foreground/50 flex-shrink-0 mt-1.5" />
-                        {pt}
+                        <span className="w-1.5 h-1.5 rounded-full bg-forest mt-1.5 flex-shrink-0" />
+                        {point}
                       </li>
                     ))}
                   </ul>
-                  {onNavigatePolicies && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onNavigatePolicies();
-                      }}
-                      className="flex items-center gap-1 text-xs font-sans-display font-semibold text-forest hover:underline"
-                      data-ocid="order.see_full_policies_link"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      See full policies →
-                    </button>
-                  )}
-                  <div className="flex items-start gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onNavigatePolicies?.()}
+                    className="flex items-center gap-1 text-xs font-sans-display font-semibold text-forest hover:text-forest/80 transition-colors mt-1"
+                    data-ocid="order.policy_link"
+                  >
+                    See full policies
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Policy checkbox */}
+                <div
+                  className="p-3 rounded-xl border"
+                  style={{
+                    background: "oklch(0.97 0.008 155 / 0.7)",
+                    borderColor: "oklch(0.85 0.02 155 / 0.5)",
+                  }}
+                >
+                  <div className="flex items-start gap-3">
                     <Checkbox
-                      id="policy-agree"
+                      id="policy-check"
                       checked={policyChecked}
-                      onCheckedChange={(v) => {
-                        setPolicyChecked(!!v);
-                        if (errors.policy)
-                          setErrors((prev) => ({ ...prev, policy: "" }));
-                      }}
-                      className="mt-0.5 flex-shrink-0"
+                      onCheckedChange={(v) => setPolicyChecked(!!v)}
+                      className="mt-0.5"
                       data-ocid="order.policy_checkbox"
                     />
                     <Label
-                      htmlFor="policy-agree"
-                      className="cursor-pointer text-xs font-body text-foreground leading-relaxed"
+                      htmlFor="policy-check"
+                      className="font-body text-xs text-foreground cursor-pointer leading-relaxed"
                     >
                       I have read and agree to the{" "}
-                      <span className="font-semibold text-forest">
-                        store policies
-                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onNavigatePolicies?.();
+                        }}
+                        className="underline text-forest font-semibold hover:text-forest/80 inline-flex items-center gap-0.5"
+                      >
+                        Store Policies
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </button>{" "}
+                      including cancellation, refund, and return policy.
+                      {edition === "elite" && (
+                        <span className="text-amber-700 font-semibold">
+                          {" "}
+                          Elite orders are non-returnable.
+                        </span>
+                      )}
                     </Label>
                   </div>
                   {errors.policy && (
                     <p
-                      className="text-destructive text-xs font-body"
+                      className="text-red-500 text-xs mt-2 font-body"
                       data-ocid="order.policy_error"
                     >
                       {errors.policy}
@@ -853,37 +879,78 @@ export default function OrderModal({
                   )}
                 </div>
 
+                {/* Price Summary */}
+                <div
+                  className="rounded-2xl p-4 flex items-center justify-between"
+                  style={{
+                    background:
+                      edition === "elite"
+                        ? "linear-gradient(135deg, rgba(217,119,6,0.07), rgba(245,158,11,0.04))"
+                        : "linear-gradient(135deg, oklch(0.34 0.095 155 / 0.06), oklch(0.42 0.1 155 / 0.03))",
+                    border:
+                      edition === "elite"
+                        ? "1px solid rgba(217,119,6,0.2)"
+                        : "1px solid oklch(0.34 0.095 155 / 0.12)",
+                  }}
+                >
+                  <div>
+                    <p className="font-sans-display font-semibold text-foreground">
+                      Order Total
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p
+                        className="font-display text-2xl font-bold"
+                        style={{
+                          color:
+                            edition === "elite"
+                              ? "oklch(0.5 0.12 55)"
+                              : "oklch(0.34 0.095 155)",
+                        }}
+                      >
+                        ₹{currentPrice}
+                      </p>
+                      {edition !== "elite" && (
+                        <p className="text-muted-foreground line-through text-sm font-body">
+                          ₹{originalPrice}
+                        </p>
+                      )}
+                    </div>
+                    {edition !== "elite" && (
+                      <p className="text-[11px] text-forest font-body font-semibold">
+                        🎉 Early Bird — Save ₹{originalPrice - currentPrice}!
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <div
+                      className="text-xs px-2 py-1 rounded-lg font-sans-display font-semibold"
+                      style={{
+                        background: "rgba(16,185,129,0.1)",
+                        color: "rgb(5,150,105)",
+                      }}
+                    >
+                      <FileText className="w-3 h-3 inline mr-0.5" />
+                      UPI Only
+                    </div>
+                  </div>
+                </div>
+
                 <Button
                   type="submit"
-                  disabled={isPending || !policyChecked}
-                  className={`w-full font-sans-display font-bold py-3 text-base rounded-xl shadow-lg ${
-                    edition === "elite"
-                      ? "bg-amber-500 text-white hover:bg-amber-600"
-                      : edition === "premium"
-                        ? "bg-coral text-white hover:opacity-90"
-                        : "bg-forest text-white hover:bg-forest/90"
-                  }`}
-                  style={
-                    edition === "elite"
-                      ? {
-                          background:
-                            "linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #d97706 100%)",
-                          boxShadow: "0 8px 24px rgba(217,119,6,0.35)",
-                        }
-                      : {}
-                  }
+                  disabled={isPending}
+                  className="w-full py-3 rounded-xl font-sans-display font-bold text-base"
+                  style={{
+                    background:
+                      edition === "elite"
+                        ? "linear-gradient(135deg, #d97706, #f59e0b)"
+                        : "oklch(0.34 0.095 155)",
+                    color: edition === "elite" ? "white" : "white",
+                    border: "none",
+                  }}
                   data-ocid="order.submit_button"
                 >
                   {isPending ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Placing Order…
-                    </>
-                  ) : edition === "elite" ? (
-                    <>
-                      <Crown className="mr-2 h-4 w-4" />
-                      Place Elite Order — ₹{currentPrice}
-                    </>
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   ) : (
                     `Place Order — ₹${currentPrice}`
                   )}

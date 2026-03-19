@@ -37,8 +37,12 @@ export const Order = IDL.Record({
   'phone' : IDL.Text,
   'pricePaid' : IDL.Nat,
   'pincode' : IDL.Text,
+  'country' : IDL.Text,
   'examType' : IDL.Text,
   'bonusPages' : IDL.Text,
+  'dueDate' : IDL.Text,
+  'priority' : IDL.Text,
+  'customPriority' : IDL.Bool,
 });
 export const UserProfile = IDL.Record({
   'name' : IDL.Text,
@@ -53,7 +57,9 @@ export const Stats = IDL.Record({
   'totalProfit' : IDL.Nat,
   'pendingCancelRequests' : IDL.Nat,
   'totalRevenue' : IDL.Nat,
-  'earlyBirdUsed' : IDL.Nat,
+  'earlyBirdUsedBase' : IDL.Nat,
+  'earlyBirdUsedPremium' : IDL.Nat,
+  'investmentAmount' : IDL.Nat,
 });
 
 export const idlService = IDL.Service({
@@ -77,6 +83,8 @@ export const idlService = IDL.Service({
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'placeOrder' : IDL.Func(
       [
+        IDL.Text,
+        IDL.Text,
         IDL.Text,
         IDL.Text,
         IDL.Text,
@@ -133,8 +141,12 @@ export const idlFactory = ({ IDL }) => {
     'phone' : IDL.Text,
     'pricePaid' : IDL.Nat,
     'pincode' : IDL.Text,
+    'country' : IDL.Text,
     'examType' : IDL.Text,
     'bonusPages' : IDL.Text,
+    'dueDate' : IDL.Text,
+    'priority' : IDL.Text,
+    'customPriority' : IDL.Bool,
   });
   const UserProfile = IDL.Record({
     'name' : IDL.Text,
@@ -149,7 +161,9 @@ export const idlFactory = ({ IDL }) => {
     'totalProfit' : IDL.Nat,
     'pendingCancelRequests' : IDL.Nat,
     'totalRevenue' : IDL.Nat,
-    'earlyBirdUsed' : IDL.Nat,
+    'earlyBirdUsedBase' : IDL.Nat,
+    'earlyBirdUsedPremium' : IDL.Nat,
+    'investmentAmount' : IDL.Nat,
   });
   
   return IDL.Service({
@@ -173,6 +187,8 @@ export const idlFactory = ({ IDL }) => {
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'placeOrder' : IDL.Func(
         [
+          IDL.Text,
+          IDL.Text,
           IDL.Text,
           IDL.Text,
           IDL.Text,

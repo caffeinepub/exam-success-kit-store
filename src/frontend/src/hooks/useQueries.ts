@@ -2,6 +2,48 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CancelRequest, Order, Stats } from "../backend.d";
 import { useActor } from "./useActor";
 
+// The backend.ts wrapper is auto-generated from an older schema (10-arg placeOrder,
+// no country/dueDate/priority on Order). backend.d.ts reflects the CURRENT Motoko backend.
+// We cast at the actor boundary so the rest of the app uses the correct types.
+type BackendActor = {
+  placeOrder(
+    customerName: string,
+    phone: string,
+    email: string,
+    address: string,
+    pincode: string,
+    country: string,
+    paymentMethod: string,
+    edition: string,
+    customName: string,
+    examType: string,
+    bonusPages: string,
+    dueDate: string,
+  ): Promise<string>;
+  getAllOrders(): Promise<Order[]>;
+  getOrdersByPhone(phone: string): Promise<Order[]>;
+  getOrdersByEmail(email: string): Promise<Order[]>;
+  getOrderById(orderId: string): Promise<Order | null>;
+  getStats(): Promise<Stats>;
+  getEarlyBirdCount(): Promise<bigint>;
+  updateOrderStatus(orderId: string, newStatus: string): Promise<boolean>;
+  isCallerAdmin(): Promise<boolean>;
+  submitCancelRequest(
+    orderId: string,
+    customerEmail: string,
+    customerPhone: string,
+    reason: string,
+    requestType: string,
+  ): Promise<string>;
+  getAllCancelRequests(): Promise<CancelRequest[]>;
+  updateCancelRequest(requestId: string, newStatus: string): Promise<boolean>;
+  clearOrders(clearAll: boolean): Promise<bigint>;
+};
+
+function getTypedActor(actor: unknown): BackendActor {
+  return actor as BackendActor;
+}
+
 export function usePlaceOrder() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -12,35 +54,51 @@ export function usePlaceOrder() {
       email = "",
       address,
       pincode,
+      country = "India",
       paymentMethod,
       edition,
       customName = "",
       examType = "",
       bonusPages = "",
+      dueDate = "",
     }: {
       customerName: string;
       phone: string;
       email?: string;
       address: string;
       pincode: string;
+      country?: string;
       paymentMethod: string;
       edition: string;
       customName?: string;
       examType?: string;
       bonusPages?: string;
+      dueDate?: string;
     }) => {
-      if (!actor) throw new Error("Actor not initialized");
-      return actor.placeOrder(
+      let resolvedActor = actor;
+      if (!resolvedActor) {
+        try {
+          const { createActorWithConfig } = await import("../config");
+          resolvedActor = await createActorWithConfig();
+        } catch (_e) {
+          throw new Error(
+            "Could not connect to store. Please refresh and try again.",
+          );
+        }
+      }
+      return getTypedActor(resolvedActor).placeOrder(
         customerName,
         phone,
         email,
         address,
         pincode,
+        country,
         paymentMethod,
         edition,
         customName,
         examType,
         bonusPages,
+        dueDate,
       );
     },
     onSuccess: () => {
@@ -57,7 +115,7 @@ export function useGetOrdersByPhone(phone: string) {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getOrdersByPhone(phone);
+        return await getTypedActor(actor).getOrdersByPhone(phone);
       } catch {
         return [];
       }
@@ -73,7 +131,7 @@ export function useGetOrdersByEmail(email: string) {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getOrdersByEmail(email);
+        return await getTypedActor(actor).getOrdersByEmail(email);
       } catch {
         return [];
       }
@@ -89,7 +147,7 @@ export function useGetAllOrders() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getAllOrders();
+        return await getTypedActor(actor).getAllOrders();
       } catch {
         return [];
       }
@@ -105,7 +163,7 @@ export function useGetOrderById(orderId: string) {
     queryFn: async () => {
       if (!actor) return null;
       try {
-        return await actor.getOrderById(orderId);
+        return await getTypedActor(actor).getOrderById(orderId);
       } catch {
         return null;
       }
@@ -121,7 +179,7 @@ export function useGetEarlyBirdCount() {
     queryFn: async () => {
       if (!actor) return BigInt(0);
       try {
-        return await actor.getEarlyBirdCount();
+        return await getTypedActor(actor).getEarlyBirdCount();
       } catch {
         return BigInt(0);
       }
@@ -140,7 +198,7 @@ export function useUpdateOrderStatus() {
     }: { orderId: string; newStatus: string }) => {
       if (!actor) throw new Error("Actor not initialized");
       try {
-        return await actor.updateOrderStatus(orderId, newStatus);
+        return await getTypedActor(actor).updateOrderStatus(orderId, newStatus);
       } catch {
         return false;
       }
@@ -160,7 +218,7 @@ export function useGetStats() {
     queryFn: async () => {
       if (!actor) return null;
       try {
-        return await actor.getStats();
+        return await getTypedActor(actor).getStats();
       } catch {
         return null;
       }
@@ -175,7 +233,7 @@ export function useIsCallerAdmin() {
     queryKey: ["isAdmin"],
     queryFn: async () => {
       if (!actor) return false;
-      return actor.isCallerAdmin();
+      return getTypedActor(actor).isCallerAdmin();
     },
     enabled: !!actor && !isFetching,
   });
@@ -199,7 +257,7 @@ export function useSubmitCancelRequest() {
       requestType: string;
     }) => {
       if (!actor) throw new Error("Actor not initialized");
-      return actor.submitCancelRequest(
+      return getTypedActor(actor).submitCancelRequest(
         orderId,
         customerEmail,
         customerPhone,
@@ -221,7 +279,7 @@ export function useGetAllCancelRequests() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getAllCancelRequests();
+        return await getTypedActor(actor).getAllCancelRequests();
       } catch {
         return [];
       }
@@ -239,7 +297,7 @@ export function useUpdateCancelRequest() {
       newStatus,
     }: { requestId: string; newStatus: string }) => {
       if (!actor) throw new Error("Actor not initialized");
-      return actor.updateCancelRequest(requestId, newStatus);
+      return getTypedActor(actor).updateCancelRequest(requestId, newStatus);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cancelRequests"] });
@@ -256,7 +314,7 @@ export function useClearOrders() {
     mutationFn: async ({ clearAll }: { clearAll: boolean }) => {
       if (!actor) throw new Error("Actor not initialized");
       try {
-        return await actor.clearOrders(clearAll);
+        return await getTypedActor(actor).clearOrders(clearAll);
       } catch {
         return BigInt(0);
       }
@@ -265,6 +323,23 @@ export function useClearOrders() {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["stats"] });
       queryClient.invalidateQueries({ queryKey: ["cancelRequests"] });
+    },
+  });
+}
+
+export function useSetOrderPriority() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      orderId,
+      priority,
+    }: { orderId: string; priority: string }) => {
+      if (!actor) throw new Error("Actor not initialized");
+      return (actor as any).setOrderPriority(orderId, priority, true);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
     },
   });
 }
